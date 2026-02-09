@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Frontend-Only Stealth Player</title>
+  <style>
+    :root {
+      --bg: #0b0d11;
+      --panel: #151a23;
+      --line: #2a313d;
+      --text: #e8edf5;
+      --muted: #9aa7ba;
+      --accent: #5ca8ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(circle at top, #182132 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+      display: grid;
+      place-items: start center;
+    }
+    .app {
+      width: min(980px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+    }
+    input, button {
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #0f141d;
+      color: var(--text);
+      padding: 11px 12px;
+      font: inherit;
+    }
+    input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(92, 168, 255, 0.22);
+    }
+    button {
+      background: #2f5f90;
+      border-color: #3f78ae;
+      font-weight: 700;
+      cursor: pointer;
+      min-width: 96px;
+    }
+    .hint {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .screen {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      position: relative;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #000;
+    }
+    .status {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      min-height: 1.3em;
+    }
+    .debug {
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0c1119;
+      padding: 8px;
+      color: #9ed0ff;
+      font-size: 0.78rem;
+      line-height: 1.35;
+      max-height: 180px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .controls {
+      margin-top: 10px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .controls label {
+      color: var(--muted);
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .controls input {
+      width: 82px;
+      padding: 8px;
+    }
+    audio {
+      margin-top: 10px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="row">
+      <input id="urlInput" type="url" value="https://blandfx.com/media/postpigs.mp4" placeholder="MP4 URL (CORS-enabled)">
+      <button id="loadBtn" type="button">Load</button>
+    </div>
+
+    <div class="controls">
+      <label for="offsetInput">A/V Offset (s)
+        <input id="offsetInput" type="number" step="0.05" value="0">
+      </label>
+    </div>
+
+    <section class="screen">
+      <canvas id="screen" width="1280" height="720"></canvas>
+    </section>
+
+    <audio id="audio" controls preload="auto"></audio>
+    <p id="status" class="status">Idle.</p>
+    <pre id="debugLog" class="debug"></pre>
+    <p class="hint">Frontend-only decode path: MP4 + CORS + WebCodecs required. No backend transcoding.</p>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.4/dist/mp4box.all.min.js"></script>
+  <script>
+    const urlInput = document.getElementById('urlInput');
+    const loadBtn = document.getElementById('loadBtn');
+    const offsetInput = document.getElementById('offsetInput');
+    const audio = document.getElementById('audio');
+    const statusEl = document.getElementById('status');
+    const debugEl = document.getElementById('debugLog');
+    const canvas = document.getElementById('screen');
+    const ctx = canvas.getContext('2d', { alpha: false });
+
+    let decoder = null;
+    let frameQueue = [];
+    let encodedQueue = [];
+    let decodePumpScheduled = false;
+    let renderRaf = 0;
+    let stopped = true;
+    let frameTimeBase = null;
+    let decodedFrameCount = 0;
+    let decodeErrorCount = 0;
+    let renderedFrameCount = 0;
+    let sawFirstKeyframe = false;
+    let lastNoFrameLogAt = 0;
+    const DEBUG = true;
+    const debugLines = [];
+
+    function dbg(tag, message, data) {
+      if (!DEBUG) return;
+      const ts = new Date().toISOString().slice(11, 23);
+      let line = '[' + ts + '] ' + tag + ': ' + message;
+      if (data !== undefined) {
+        try { line += ' ' + JSON.stringify(data); } catch (_) {}
+      }
+      console.log('[stealth]', tag, message, data || '');
+      debugLines.push(line);
+      if (debugLines.length > 150) debugLines.shift();
+      debugEl.textContent = debugLines.join('\n');
+      debugEl.scrollTop = debugEl.scrollHeight;
+    }
+
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+      dbg('status', msg);
+    }
+
+    function clearFrames() {
+      while (frameQueue.length) {
+        const item = frameQueue.shift();
+        try { item.frame.close(); } catch (_) {}
+      }
+    }
+
+    function stopSession() {
+      stopped = true;
+      if (renderRaf) cancelAnimationFrame(renderRaf);
+      renderRaf = 0;
+      clearFrames();
+      encodedQueue = [];
+      decodePumpScheduled = false;
+      frameTimeBase = null;
+      decodedFrameCount = 0;
+      decodeErrorCount = 0;
+      renderedFrameCount = 0;
+      sawFirstKeyframe = false;
+      lastNoFrameLogAt = 0;
+      if (decoder) {
+        try { decoder.close(); } catch (_) {}
+      }
+      decoder = null;
+      dbg('session', 'stop');
+    }
+
+    function drawFrame(frame) {
+      if (!ctx) return;
+      const srcW = frame.displayWidth || frame.codedWidth || canvas.width;
+      const srcH = frame.displayHeight || frame.codedHeight || canvas.height;
+      if (srcW > 0 && srcH > 0 && (canvas.width !== srcW || canvas.height !== srcH)) {
+        canvas.width = srcW;
+        canvas.height = srcH;
+      }
+      ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+    }
+
+    function renderLoop() {
+      if (stopped) return;
+      const offset = Number(offsetInput.value) || 0;
+      const t = Math.max(0, (Number.isFinite(audio.currentTime) ? audio.currentTime : 0) + offset);
+      let picked = null;
+
+      while (frameQueue.length && frameQueue[0].ts <= (t + 0.03)) {
+        if (picked) {
+          try { picked.frame.close(); } catch (_) {}
+        }
+        picked = frameQueue.shift();
+      }
+
+      // If audio runs ahead, still draw newest available frame instead of blacking out.
+      if (!picked && frameQueue.length) {
+        if (frameQueue[frameQueue.length - 1].ts < (t - 0.6)) {
+          while (frameQueue.length > 1) {
+            const old = frameQueue.shift();
+            try { old.frame.close(); } catch (_) {}
+          }
+          picked = frameQueue.shift();
+        } else if (frameQueue[0].ts <= (t + 0.25)) {
+          picked = frameQueue.shift();
+        }
+      }
+
+      if (picked) {
+        drawFrame(picked.frame);
+        try { picked.frame.close(); } catch (_) {}
+        renderedFrameCount += 1;
+      } else if (frameQueue.length === 0) {
+        const now = performance.now();
+        if (now - lastNoFrameLogAt > 1200) {
+          lastNoFrameLogAt = now;
+        dbg('render', 'no frame available', {
+          audioTime: Number(audio.currentTime || 0).toFixed(3),
+          decodedFrameCount,
+          renderedFrameCount,
+          demuxQueue: encodedQueue.length,
+          decodeQueueSize: decoder ? decoder.decodeQueueSize : -1,
+          decoderState: decoder ? decoder.state : 'none'
+        });
+        }
+      }
+
+      renderRaf = requestAnimationFrame(renderLoop);
+    }
+
+    function toUs(timeScaleValue, timescale) {
+      return Math.round((timeScaleValue * 1_000_000) / timescale);
+    }
+
+    function scheduleDecodePump() {
+      if (decodePumpScheduled) return;
+      decodePumpScheduled = true;
+      queueMicrotask(function () {
+        decodePumpScheduled = false;
+        if (stopped || !decoder || decoder.state !== 'configured') return;
+        while (encodedQueue.length && decoder.decodeQueueSize < 48) {
+          const chunk = encodedQueue.shift();
+          try {
+            decoder.decode(chunk);
+          } catch (_) {
+            decodeErrorCount += 1;
+          }
+        }
+      });
+    }
+
+    function extractDecoderDescription(mp4boxFile, trackId) {
+      try {
+        if (!mp4boxFile || !mp4boxFile.moov || !Array.isArray(mp4boxFile.moov.traks)) return null;
+        const trak = mp4boxFile.moov.traks.find((t) => t && t.tkhd && t.tkhd.track_id === trackId);
+        if (!trak || !trak.mdia || !trak.mdia.minf || !trak.mdia.minf.stbl || !trak.mdia.minf.stbl.stsd) return null;
+        const entries = trak.mdia.minf.stbl.stsd.entries || [];
+        if (!entries.length) return null;
+        const e = entries[0];
+        const box = e.avcC || e.hvcC || e.vpcC || e.av1C;
+        if (!box || typeof box.write !== 'function' || typeof DataStream === 'undefined') return null;
+        const stream = new DataStream(undefined, 0, DataStream.BIG_ENDIAN);
+        box.write(stream);
+        return new Uint8Array(stream.buffer, 8); // strip size+type header
+      } catch (_) {
+        return null;
+      }
+    }
+
+    async function loadFrontendOnly(url) {
+      if (!window.VideoDecoder || !window.EncodedVideoChunk || typeof MP4Box === 'undefined') {
+        throw new Error('WebCodecs and/or mp4box unavailable in this browser.');
+      }
+
+      stopSession();
+      setStatus('Fetching media...');
+
+      const res = await fetch(url, { mode: 'cors', cache: 'no-store' });
+      if (!res.ok) throw new Error('Fetch failed: ' + res.status);
+      const buffer = await res.arrayBuffer();
+      buffer.fileStart = 0;
+
+      const mp4box = MP4Box.createFile();
+      let videoTrack = null;
+
+      decoder = new VideoDecoder({
+        output(frame) {
+          const rawTs = (Number(frame.timestamp) || 0) / 1_000_000;
+          if (frameTimeBase === null) frameTimeBase = rawTs;
+          const ts = Math.max(0, rawTs - frameTimeBase);
+          frameQueue.push({ ts, frame });
+          decodedFrameCount += 1;
+          if (decodedFrameCount % 30 === 0) {
+            dbg('decode', 'frame output', { decodedFrameCount, ts: ts.toFixed(3), frameQueue: frameQueue.length });
+          }
+          if (frameQueue.length > 220) {
+            const old = frameQueue.shift();
+            try { old.frame.close(); } catch (_) {}
+          }
+          scheduleDecodePump();
+        },
+        error(err) {
+          decodeErrorCount += 1;
+          dbg('decode', 'decoder error', { err: String(err && err.message ? err.message : err), decodeErrorCount });
+          setStatus('Decoder error: ' + String(err && err.message ? err.message : err));
+        }
+      });
+
+      mp4box.onError = function (e) {
+        dbg('mp4box', 'error', { e: String(e) });
+        setStatus('MP4 parse error: ' + e);
+      };
+
+      mp4box.onReady = function (info) {
+        dbg('mp4box', 'ready', {
+          videoTracks: (info.videoTracks || []).map((t) => ({ id: t.id, codec: t.codec, w: t.video && t.video.width, h: t.video && t.video.height }))
+        });
+        videoTrack = (info.videoTracks && info.videoTracks[0]) ? info.videoTracks[0] : null;
+        if (!videoTrack) {
+          setStatus('No video track found.');
+          return;
+        }
+        try {
+          const config = {
+            codec: videoTrack.codec,
+            codedWidth: videoTrack.video ? videoTrack.video.width : undefined,
+            codedHeight: videoTrack.video ? videoTrack.video.height : undefined,
+            optimizeForLatency: true
+          };
+          const description = extractDecoderDescription(mp4box, videoTrack.id);
+          if (description && description.byteLength) {
+            config.description = description;
+          }
+          decoder.configure(config);
+          dbg('decode', 'configured', { codec: config.codec, hasDescription: !!config.description, w: config.codedWidth, h: config.codedHeight });
+        } catch (e) {
+          dbg('decode', 'configure failed', { err: String(e && e.message ? e.message : e) });
+          setStatus('Decoder configure failed: ' + (e.message || e));
+          return;
+        }
+        mp4box.setExtractionOptions(videoTrack.id, null, { nbSamples: 200 });
+        mp4box.start();
+        setStatus('Decoding video frames...');
+      };
+
+      mp4box.onSamples = function (id, user, samples) {
+        if (!videoTrack || !decoder || decoder.state !== 'configured') return;
+        let pushed = 0;
+        for (const s of samples) {
+          if (!s || !s.data || !s.data.byteLength) continue;
+          if (!sawFirstKeyframe) {
+            if (!s.is_sync) continue;
+            sawFirstKeyframe = true;
+            dbg('decode', 'found first keyframe', { cts: s.cts, dur: s.duration });
+          }
+          try {
+            const chunk = new EncodedVideoChunk({
+              type: s.is_sync ? 'key' : 'delta',
+              timestamp: toUs(s.cts, videoTrack.timescale),
+              duration: toUs(s.duration || 0, videoTrack.timescale),
+              data: s.data
+            });
+            encodedQueue.push(chunk);
+            pushed += 1;
+          } catch (_) {}
+        }
+        if (samples.length && typeof mp4box.releaseUsedSamples === 'function') {
+          try {
+            const last = samples[samples.length - 1];
+            mp4box.releaseUsedSamples(id, last.number);
+          } catch (_) {}
+        }
+        scheduleDecodePump();
+        if (pushed) {
+          dbg('demux', 'samples', { pushed, sampleCount: samples.length, queued: encodedQueue.length });
+          setStatus('Playing. decoded=' + decodedFrameCount + ' queued=' + frameQueue.length + ' demux=' + encodedQueue.length + ' errs=' + decodeErrorCount);
+        }
+      };
+
+      mp4box.appendBuffer(buffer);
+      mp4box.flush();
+    }
+
+    async function start() {
+      const url = urlInput.value.trim();
+      if (!url) return;
+      stopSession();
+      audio.pause();
+      audio.src = url;
+      dbg('start', 'loading', { url });
+      setStatus('Preparing audio...');
+      try {
+        await loadFrontendOnly(url);
+      } catch (e) {
+        setStatus('Video decode setup failed: ' + (e.message || e));
+        return;
+      }
+
+      stopped = false;
+      renderRaf = requestAnimationFrame(renderLoop);
+
+      // Give decoder a short head-start so autoplay doesn't outrun frame availability.
+      const deadline = performance.now() + 2500;
+      while (!stopped && frameQueue.length < 1 && performance.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 30));
+      }
+
+      try {
+        await audio.play();
+        setStatus('Playing.');
+      } catch (_) {
+        dbg('audio', 'autoplay blocked');
+        setStatus('Ready. Press Play on the audio controls to start.');
+      }
+    }
+
+    loadBtn.addEventListener('click', start);
+    urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        start();
+      }
+    });
+
+    audio.addEventListener('pause', () => {
+      if (!stopped) setStatus('Paused.');
+      dbg('audio', 'pause', { t: Number(audio.currentTime || 0).toFixed(3) });
+    });
+    audio.addEventListener('play', () => {
+      if (!stopped) setStatus('Playing.');
+      dbg('audio', 'play', { t: Number(audio.currentTime || 0).toFixed(3) });
+    });
+    audio.addEventListener('ended', () => {
+      setStatus('Ended.');
+      dbg('audio', 'ended');
+    });
+    audio.addEventListener('error', () => {
+      const e = audio.error;
+      dbg('audio', 'error', { code: e ? e.code : null, message: e ? e.message : null });
+    });
+
+    const p = new URLSearchParams(window.location.search);
+    const u = p.get('url') || p.get('stream');
+    if (u) urlInput.value = u;
+  </script>
+</body>
+</html>

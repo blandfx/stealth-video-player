@@ -1,0 +1,2652 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IMG-Only Video Player</title>
+  <link rel="icon" type="image/png" href="./favicon.png?v=1">
+  <style>
+    :root {
+      --bg: #0d0f13;
+      --panel: #171b22;
+      --text: #edf0f4;
+      --muted: #9ea6b2;
+      --line: #2b313d;
+      --accent: #5da8ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(circle at top, #1a2030 0%, var(--bg) 55%);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .app {
+      width: min(980px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    body.full-width {
+      display: block;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    body.full-width .app {
+      width: 100%;
+      max-width: none;
+      height: 100vh;
+      min-height: 100vh;
+      border-radius: 0;
+      border: 0;
+      padding: 0;
+    }
+
+    form {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .url-source {
+      margin: -4px 0 12px;
+      color: #8ec5ff;
+      font-size: 0.85rem;
+      display: none;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #0f131a;
+      color: var(--text);
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(93, 168, 255, 0.25);
+    }
+
+    button {
+      border: 1px solid #3f77ad;
+      background: #2f5f90;
+      color: #fff;
+      border-radius: 8px;
+      padding: 0 14px;
+      cursor: pointer;
+    }
+
+    .video-settings {
+      margin-bottom: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      background: linear-gradient(180deg, #121824 0%, #101620 100%);
+      display: grid;
+      gap: 10px;
+    }
+
+    .video-settings-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .video-settings-head-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .video-settings-title {
+      margin: 0;
+      font-size: 0.95rem;
+      letter-spacing: 0.02em;
+      color: #deebff;
+    }
+
+    .video-settings-subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .video-settings-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1fr;
+    }
+
+    .setting-card {
+      border: 1px solid #273448;
+      border-radius: 10px;
+      background: #0f1520;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+      min-height: 86px;
+    }
+
+    .setting-label {
+      color: #cbd7e7;
+      font-size: 0.84rem;
+      letter-spacing: 0.01em;
+    }
+
+    .setting-inline {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 42px;
+    }
+
+    .video-settings input[type="number"] {
+      padding: 10px;
+    }
+
+    #fpsInput {
+      max-width: 110px;
+    }
+
+    #fpsMatchInput {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      accent-color: #6cb0ff;
+      cursor: pointer;
+    }
+
+    .quality-block {
+      display: grid;
+      gap: 8px;
+    }
+
+    .quality-slider-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #qualityInput {
+      width: 100%;
+      padding: 0;
+      accent-color: #77bcff;
+    }
+
+    .quality-note {
+      color: var(--muted);
+      font-size: 0.8rem;
+      line-height: 1.3;
+    }
+
+    #qualityValue {
+      min-width: 34px;
+      text-align: center;
+      color: #dbeaff;
+      background: #1a2537;
+      border: 1px solid #32445e;
+      border-radius: 7px;
+      padding: 5px 6px;
+      font-size: 0.82rem;
+      line-height: 1;
+    }
+
+    #applyVideoSettingsBtn {
+      min-height: 40px;
+      justify-self: end;
+      padding: 0 16px;
+      font-weight: 700;
+    }
+
+    .video-settings-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    #videoSettingsToggleBtn {
+      min-height: 34px;
+      padding: 0 12px;
+      font-weight: 700;
+      border-color: #415b79;
+      background: #22364f;
+    }
+
+    .bandwidth-monitor {
+      color: #d6e6ff;
+      border: 1px solid #32445e;
+      border-radius: 8px;
+      background: #121c2a;
+      padding: 8px 10px;
+      font-size: 0.82rem;
+      line-height: 1.2;
+      min-width: 170px;
+    }
+
+    .video-settings.collapsed .video-settings-grid,
+    .video-settings.collapsed .video-settings-actions {
+      display: none;
+    }
+
+    .controls {
+      margin-top: 12px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .offset-nudges {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+      align-items: center;
+    }
+
+    .offset-btn {
+      flex: 1 1 240px;
+      min-height: 56px;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      touch-action: manipulation;
+    }
+
+    .offset-value {
+      min-width: 110px;
+      text-align: center;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #d8e8ff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 10px;
+      background: #111a28;
+    }
+
+    .plex {
+      margin-bottom: 12px;
+      position: relative;
+    }
+
+    #plexSearch {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #0f131a;
+      color: var(--text);
+      outline: none;
+    }
+
+    #plexSuggest {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      background: #0d1118;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      max-height: 260px;
+      overflow-y: auto;
+      z-index: 50;
+      display: none;
+    }
+
+    .plex-item {
+      width: 100%;
+      text-align: left;
+      border: 0;
+      border-bottom: 1px solid #1f2631;
+      border-radius: 0;
+      background: transparent;
+      color: var(--text);
+      padding: 10px 12px;
+      cursor: pointer;
+    }
+
+    .plex-item:last-child {
+      border-bottom: 0;
+    }
+
+    .plex-item small {
+      color: var(--muted);
+      margin-left: 8px;
+    }
+
+    #plexBrowser {
+      margin-top: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0d1118;
+      max-height: 260px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .plex-header {
+      padding: 8px 10px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      border-bottom: 1px solid #1f2631;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .plex-back {
+      border: 1px solid #3d4a5c;
+      border-radius: 6px;
+      padding: 4px 8px;
+      background: #172030;
+      color: #fff;
+    }
+
+    .screen {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background: #05070a;
+      display: grid;
+      place-items: center;
+      position: relative;
+      cursor: default;
+    }
+
+    body.full-width .screen {
+      width: 100vw;
+      height: 100vh;
+      aspect-ratio: auto;
+      border-radius: 0;
+      border: 0;
+    }
+
+    #stream {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: none;
+      background: #000;
+    }
+
+    #status {
+      margin: 0;
+      color: var(--muted);
+      text-align: center;
+      padding: 12px;
+      pointer-events: none;
+    }
+
+    #screenOverlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    #screenOverlay.clickable {
+      pointer-events: auto;
+    }
+
+    #screenOverlay.show {
+      display: flex;
+    }
+
+    #screenOverlay.fade {
+      animation: overlayFade 0.8s ease-out forwards;
+    }
+
+    .overlay-pill {
+      width: 74px;
+      height: 74px;
+      border-radius: 999px;
+      background: rgba(8, 12, 18, 0.74);
+      border: 1px solid rgba(120, 140, 165, 0.55);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-size: 1.5rem;
+      line-height: 1;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+      cursor: default;
+    }
+
+    .overlay-pill.clickable {
+      cursor: pointer;
+    }
+
+    .player-controls {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: 10px;
+      z-index: 6;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 10px;
+      align-items: center;
+      background: rgba(8, 12, 18, 0.72);
+      border: 1px solid rgba(130, 154, 186, 0.45);
+      border-radius: 12px;
+      padding: 10px;
+      backdrop-filter: blur(3px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .live-audio-start {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 7;
+      min-height: 56px;
+      min-width: 180px;
+      padding: 0 18px;
+      border-radius: 999px;
+      font-size: 1rem;
+      font-weight: 700;
+      border: 1px solid #78aee6;
+      background: rgba(30, 68, 105, 0.92);
+      color: #fff;
+      display: none;
+      touch-action: manipulation;
+    }
+
+    .live-audio-start.show {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .player-controls.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .control-btn {
+      min-height: 52px;
+      min-width: 82px;
+      border-radius: 10px;
+      font-size: 0.98rem;
+      font-weight: 700;
+      touch-action: manipulation;
+    }
+
+    .seek-wrap {
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+    }
+
+    #seekBar {
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      accent-color: #6cb0ff;
+    }
+
+    .time-label {
+      color: #c7d7ea;
+      font-size: 0.82rem;
+      text-align: right;
+    }
+
+    @keyframes overlayFade {
+      0% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    .hint {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    #audio {
+      display: none;
+    }
+
+    body.full-width .plex,
+    body.full-width #playerForm,
+    body.full-width .video-settings,
+    body.full-width .controls,
+    body.full-width .hint {
+      display: none;
+    }
+
+    @media (min-width: 760px) {
+      .video-settings-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="plex">
+      <input id="plexSearch" type="text" placeholder="Search Plex library...">
+      <div id="plexSuggest"></div>
+      <div id="plexBrowser"></div>
+    </section>
+
+    <form id="playerForm">
+      <input id="urlInput" type="url" placeholder="Paste MP4/MOV/WebM URL" value="https://blandfx.com/proxy/ts/stream/d7c78acb-fb75-4d24-a183-f15a2bcaa691" required>
+      <button type="submit">Play</button>
+    </form>
+    <p id="urlSource" class="url-source">Loaded from address bar URL parameter.</p>
+
+    <section id="videoSettingsPanel" class="video-settings">
+      <div class="video-settings-head">
+        <h3 class="video-settings-title">Video Settings</h3>
+        <div class="video-settings-head-right">
+          <p class="video-settings-subtitle">Tune stream smoothness and bandwidth</p>
+          <button id="videoSettingsToggleBtn" type="button" aria-expanded="true">Collapse</button>
+        </div>
+      </div>
+      <div class="video-settings-grid">
+        <div class="setting-card">
+          <div class="setting-label">Frame Rate</div>
+          <div class="setting-inline">
+            <input id="fpsInput" type="number" min="1" max="60" step="1" value="15">
+            <span>fps</span>
+          </div>
+          <label class="setting-inline">
+            <input id="fpsMatchInput" type="checkbox">
+            <span>Match content FPS automatically</span>
+          </label>
+        </div>
+        <div class="setting-card">
+          <div class="quality-block">
+            <span class="setting-label">MJPEG Quality (q:v)</span>
+            <div class="quality-slider-row">
+              <input id="qualityInput" type="range" min="2" max="31" step="1" value="14">
+              <strong id="qualityValue">14</strong>
+            </div>
+            <div class="quality-note">Lower value = higher quality / more bandwidth. Higher value = lower quality / less bandwidth.</div>
+          </div>
+        </div>
+      </div>
+      <div class="video-settings-actions">
+        <div id="bandwidthMonitor" class="bandwidth-monitor">Bandwidth: --</div>
+        <button id="applyVideoSettingsBtn" type="button">Apply Video Settings</button>
+      </div>
+    </section>
+
+    <section id="screen" class="screen">
+      <img id="stream" alt="Transcoded stream output">
+      <p id="status">Enter a video URL and press Play.</p>
+      <div id="screenOverlay"><button id="overlayIcon" class="overlay-pill" type="button" aria-label="Play">▶</button></div>
+      <div id="playerControls" class="player-controls">
+        <button id="overlayPlayPause" class="control-btn" type="button" disabled>Play</button>
+        <div class="seek-wrap">
+          <input id="seekBar" type="range" min="0" max="100" step="0.1" value="0" disabled>
+          <div id="timeLabel" class="time-label">00:00 / --:--</div>
+        </div>
+        <button id="overlayFullWidth" class="control-btn" type="button">Full</button>
+      </div>
+    </section>
+
+    <audio id="audio" preload="auto"></audio>
+    <video id="liveMasterVideo" playsinline preload="auto" style="display:none"></video>
+
+    <section class="controls">
+      <input id="syncTarget" type="number" step="0.05" value="0" hidden>
+      <div class="offset-nudges">
+        <button id="videoAheadBtn" class="offset-btn" type="button">Video Ahead of Audio (+0.25s)</button>
+        <div id="offsetValue" class="offset-value">0.00s</div>
+        <button id="audioAheadBtn" class="offset-btn" type="button">Audio Ahead of Video (-0.25s)</button>
+      </div>
+    </section>
+
+    <p class="hint">Playback is rendered through an &lt;img&gt; only. The server transcodes video into MJPEG.</p>
+    <p id="syncInfo" class="hint">Sync: idle</p>
+  </main>
+
+  <script>
+    const form = document.getElementById('playerForm');
+    const input = document.getElementById('urlInput');
+    const urlSource = document.getElementById('urlSource');
+    const plexSearch = document.getElementById('plexSearch');
+    const plexSuggest = document.getElementById('plexSuggest');
+    const plexBrowser = document.getElementById('plexBrowser');
+    const screen = document.getElementById('screen');
+    const stream = document.getElementById('stream');
+    const screenOverlay = document.getElementById('screenOverlay');
+    const overlayIcon = document.getElementById('overlayIcon');
+    const playerControls = document.getElementById('playerControls');
+    const overlayPlayPauseBtn = document.getElementById('overlayPlayPause');
+    const fullWidthBtn = document.getElementById('overlayFullWidth');
+    const seekBar = document.getElementById('seekBar');
+    const timeLabel = document.getElementById('timeLabel');
+    const statusEl = document.getElementById('status');
+    const syncInfo = document.getElementById('syncInfo');
+    const audio = document.getElementById('audio');
+    const liveMasterVideo = document.getElementById('liveMasterVideo');
+    const videoSettingsPanel = document.getElementById('videoSettingsPanel');
+    const videoSettingsToggleBtn = document.getElementById('videoSettingsToggleBtn');
+    const fpsMatchInput = document.getElementById('fpsMatchInput');
+    const fpsInput = document.getElementById('fpsInput');
+    const qualityInput = document.getElementById('qualityInput');
+    const qualityValue = document.getElementById('qualityValue');
+    const applyVideoSettingsBtn = document.getElementById('applyVideoSettingsBtn');
+    const bandwidthMonitor = document.getElementById('bandwidthMonitor');
+    const syncTargetInput = document.getElementById('syncTarget');
+    const offsetValue = document.getElementById('offsetValue');
+    const videoAheadBtn = document.getElementById('videoAheadBtn');
+    const audioAheadBtn = document.getElementById('audioAheadBtn');
+    let pendingAudioStart = false;
+    let liveAudioRequestedAtMs = 0;
+    let liveAudioReadyAtMs = 0;
+    let liveFirstFrameAtMs = 0;
+    let liveStartupSeekApplied = false;
+    let liveStartupWaitUntilMs = 0;
+    let liveFirstFrameRetryTimer = null;
+    let liveFirstFrameRetries = 0;
+    let freezeOnNextFrame = false;
+    let syncTimer = null;
+    let syncSource = null;
+    let activeSessionId = '';
+    let lastVideoClock = 0;
+    let hasVideoFrame = false;
+    let isPaused = false;
+    let suppressStreamError = false;
+    let currentIsLiveStream = false;
+    let mediaBaseTime = 0;
+    let pausePositionSeconds = 0;
+    let pausedFrameDataUrl = '';
+    let overlayFadeTimer = null;
+    let controlsHideTimer = null;
+    let isSeeking = false;
+    let seekRangeMax = 100;
+    let knownDurationSeconds = NaN;
+    let liveTunerActive = false;
+    let liveTunerApplied = false;
+    let liveTunerStartAt = 0;
+    let liveTunerSamples = [];
+    let manualOffsetEdited = false;
+    let previousSyncTarget = 0;
+    let manualNudgeDirection = 0;
+    let manualNudgeUntilMs = 0;
+    let syncFilteredError = 0;
+    let syncIntegralError = 0;
+    let lastSyncSampleAtMs = 0;
+    let lastLargeDriftCorrectionAtMs = 0;
+    let lastLiveAudioReloadAtMs = 0;
+    let lastLiveBufferedCatchupAtMs = 0;
+    let lastVideoRawClock = NaN;
+    let lastAudioRawClock = NaN;
+    let liveAudioOriginRawClock = NaN;
+    let livePipelineGapEstimate = 0;
+    let liveAudioPlayIssuedAtMs = 0;
+    let liveAwaitingFirstPlaying = false;
+    let liveStartupPlayDelayAdjusted = false;
+    let liveFrameLoadCount = 0;
+    let liveFirstFrameLoadAtMs = 0;
+    let liveLastFrameLoadAtMs = 0;
+    let lastLiveEdgeSnapAtMs = 0;
+    let liveTimingMode = 'master';
+    let liveVideoHoldActive = false;
+    let liveVideoHoldUntilMs = 0;
+    let liveVideoHoldTimer = null;
+    let liveAudioHoldActive = false;
+    let liveAudioHoldTimer = null;
+    let liveHoldCooldownUntilMs = 0;
+    let lastLiveHardSyncAtMs = 0;
+    const LIVE_STARTUP_BUFFER_WAIT_MS = 3000;
+    const LIVE_STARTUP_CLOCK_WAIT_MS = 3000;
+    const LIVE_STARTUP_MIN_FRAME_EVENTS = 2;
+    const LIVE_STARTUP_FRAME_GATE_TIMEOUT_MS = 2200;
+    const LIVE_STARTUP_FRAME_GATE_HARD_TIMEOUT_MS = 7000;
+    const LIVE_STARTUP_FRAME_SPAN_MIN_MS = 250;
+    const LIVE_STARTUP_FRAME_RECENT_MS = 900;
+    const LIVE_START_DELAY_SEEK_MIN = 0.18;
+    const LIVE_START_DELAY_SEEK_MAX = 4.0;
+    const LIVE_STARTUP_SEEK_THRESHOLD = 0.35;
+    const LIVE_STARTUP_SEEK_MAX = 30.0;
+    const LIVE_STARTUP_BUFFER_SLACK = 0.08;
+    const LIVE_DEAD_BAND = 0.035;
+    const LIVE_RATE_P = 0.22;
+    const LIVE_RATE_I = 0.05;
+    const LIVE_RATE_SLEW = 0.5;
+    const LIVE_RATE_INTEGRAL_CLAMP = 4.0;
+    const LIVE_RATE_MIN = 0.88;
+    const LIVE_RATE_MAX = 1.12;
+    const LIVE_RATE_MIN_LARGE = 0.8;
+    const LIVE_RATE_MAX_LARGE = 1.2;
+    const LIVE_RATE_MIN_VERY_LARGE = 0.72;
+    const LIVE_RATE_MAX_VERY_LARGE = 1.28;
+    const LIVE_LARGE_DRIFT_CORRECTION_THRESHOLD = 9.0;
+    const LIVE_LARGE_DRIFT_CORRECTION_MAX_STEP = 4.0;
+    const LIVE_LARGE_DRIFT_CORRECTION_COOLDOWN_MS = 120000;
+    const LIVE_AUDIO_RELOAD_COOLDOWN_MS = 15000;
+    const LIVE_BUFFERED_CATCHUP_THRESHOLD = 1.25;
+    const LIVE_BUFFERED_CATCHUP_COOLDOWN_MS = 8000;
+    const LIVE_BUFFERED_CATCHUP_MAX_STEP = 5.0;
+    const LIVE_TUNER_WINDOW_MS = 12000;
+    const LIVE_TUNER_MIN_SAMPLES = 16;
+    const LIVE_TUNER_MAX_ABS_TARGET = 0.45;
+    const LIVE_PIPELINE_GAP_ALPHA = 0.12;
+    const LIVE_PIPELINE_GAP_MAX = 8.0;
+    const LIVE_AUDIO_EDGE_LAG_THRESHOLD = 1.25;
+    const LIVE_AUDIO_EDGE_SNAP_COOLDOWN_MS = 4000;
+    const LIVE_USE_VIDEO_HOLD_CATCHUP = true;
+    const LIVE_VIDEO_HOLD_TRIGGER_SECONDS = 0.45;
+    const LIVE_VIDEO_HOLD_MIN_MS = 250;
+    const LIVE_VIDEO_HOLD_MAX_MS = 2600;
+    const LIVE_AUDIO_HOLD_TRIGGER_SECONDS = 999;
+    const LIVE_AUDIO_HOLD_MIN_MS = 180;
+    const LIVE_AUDIO_HOLD_MAX_MS = 1800;
+    const LIVE_HOLD_COOLDOWN_MS = 450;
+    const LIVE_HARD_SYNC_THRESHOLD = 2.5;
+    const LIVE_HARD_SYNC_MAX_STEP = 12.0;
+    const LIVE_HARD_SYNC_COOLDOWN_MS = 6000;
+    const LIVE_ALLOW_LARGE_SEEK_CORRECTIONS = false;
+    const LIVE_ALLOW_BUFFERED_CATCHUP = false;
+    const LIVE_ALLOW_EDGE_SNAP = false;
+    const DEBUG_QUERY_PARAM = new URLSearchParams(window.location.search).get('debug');
+    const LIVE_DEBUG = DEBUG_QUERY_PARAM === '1' || localStorage.getItem('splayDebug') === '1';
+    const LAST_PLAYBACK_STORAGE_KEY = 'splay:lastPlayback:v1';
+    const VIDEO_SETTINGS_STORAGE_KEY = 'splay:videoSettings:v1';
+    const VIDEO_SETTINGS_COLLAPSED_STORAGE_KEY = 'splay:videoSettingsCollapsed:v1';
+    let plexSearchTimer = null;
+    let bandwidthTimer = null;
+    let liveDebugLastGateLogMs = 0;
+    let liveDebugLastGateReason = '';
+    let currentMediaUrl = '';
+    let currentSessionMode = 'direct';
+    let restoreResumeState = null;
+
+    function getLiveTimingMedia() {
+      if (currentIsLiveStream) return liveMasterVideo;
+      return liveMasterVideo;
+    }
+
+    function liveDebugLog(label, data) {
+      if (!LIVE_DEBUG) return;
+      const now = new Date();
+      const ts = now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0');
+      if (data && typeof data === 'object') {
+        console.log('[splay ' + ts + '] ' + label, data);
+        return;
+      }
+      console.log('[splay ' + ts + '] ' + label);
+    }
+
+    function liveDebugGate(reason, details) {
+      if (!LIVE_DEBUG) return;
+      const now = performance.now();
+      if (reason !== liveDebugLastGateReason || (now - liveDebugLastGateLogMs) > 1200) {
+        liveDebugLastGateReason = reason;
+        liveDebugLastGateLogMs = now;
+        liveDebugLog('startup gate: ' + reason, details || null);
+      }
+    }
+
+    function setFullWidthMode(enabled) {
+      document.body.classList.toggle('full-width', enabled);
+      fullWidthBtn.textContent = enabled ? 'Exit' : 'Full';
+    }
+
+    function toggleFullWidthMode() {
+      const enabled = !document.body.classList.contains('full-width');
+      setFullWidthMode(enabled);
+    }
+
+    function applyAddressBarUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const candidate = params.get('url') || params.get('stream');
+      if (!candidate) return false;
+      try {
+        const parsed = new URL(candidate);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+        input.value = candidate;
+        currentMediaUrl = candidate;
+        return true;
+      } catch (_) {
+        // Ignore invalid URL params silently.
+        return false;
+      }
+    }
+
+    function clampInteger(value, min, max, fallback) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.max(min, Math.min(max, Math.round(n)));
+    }
+
+    function getVideoSettings() {
+      return {
+        fpsMode: fpsMatchInput.checked ? 'match' : 'fixed',
+        fps: clampInteger(fpsInput.value, 1, 60, 15),
+        q: clampInteger(qualityInput.value, 2, 31, 14),
+      };
+    }
+
+    function syncVideoSettingsInputs() {
+      const settings = getVideoSettings();
+      fpsMatchInput.checked = settings.fpsMode === 'match';
+      fpsInput.value = String(settings.fps);
+      fpsInput.disabled = settings.fpsMode === 'match';
+      qualityInput.value = String(settings.q);
+      qualityValue.textContent = String(settings.q);
+    }
+
+    function saveVideoSettings() {
+      try {
+        const settings = getVideoSettings();
+        localStorage.setItem(VIDEO_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      } catch (_) {}
+    }
+
+    function restoreVideoSettings() {
+      try {
+        const raw = localStorage.getItem(VIDEO_SETTINGS_STORAGE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return;
+        fpsMatchInput.checked = String(parsed.fpsMode || '').toLowerCase() === 'match';
+        fpsInput.value = String(clampInteger(parsed.fps, 1, 60, 15));
+        qualityInput.value = String(clampInteger(parsed.q, 2, 31, 14));
+      } catch (_) {}
+    }
+
+    function formatBitsPerSecond(value) {
+      if (!Number.isFinite(value) || value <= 0) return '0 kbps';
+      if (value >= 1_000_000) return (value / 1_000_000).toFixed(2) + ' Mbps';
+      if (value >= 100_000) return (value / 1_000).toFixed(0) + ' kbps';
+      return (value / 1_000).toFixed(1) + ' kbps';
+    }
+
+    function renderBandwidthMonitor(metrics) {
+      if (!metrics || !Number.isFinite(metrics.total_bps)) {
+        bandwidthMonitor.textContent = 'Bandwidth: --';
+        return;
+      }
+      const totalText = formatBitsPerSecond(metrics.total_bps);
+      const videoText = formatBitsPerSecond(Number(metrics.video_bps));
+      const audioText = formatBitsPerSecond(Number(metrics.audio_bps));
+      bandwidthMonitor.textContent = 'Bandwidth: ' + totalText + ' (V ' + videoText + ' / A ' + audioText + ')';
+    }
+
+    function clearBandwidthMonitorLoop() {
+      if (bandwidthTimer !== null) {
+        clearInterval(bandwidthTimer);
+        bandwidthTimer = null;
+      }
+      renderBandwidthMonitor(null);
+    }
+
+    function startBandwidthMonitorLoop(sid) {
+      clearBandwidthMonitorLoop();
+      renderBandwidthMonitor(null);
+      if (!sid) return;
+      bandwidthTimer = setInterval(async function () {
+        if (!activeSessionId || activeSessionId !== sid) return;
+        try {
+          const res = await fetch('./session/metrics?sid=' + encodeURIComponent(sid) + '&t=' + Date.now(), { cache: 'no-store' });
+          if (!res.ok) return;
+          const metrics = await res.json();
+          renderBandwidthMonitor(metrics);
+        } catch (_) {}
+      }, 1000);
+    }
+
+    function setVideoSettingsCollapsed(collapsed) {
+      videoSettingsPanel.classList.toggle('collapsed', !!collapsed);
+      videoSettingsToggleBtn.textContent = collapsed ? 'Expand' : 'Collapse';
+      videoSettingsToggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      try {
+        localStorage.setItem(VIDEO_SETTINGS_COLLAPSED_STORAGE_KEY, collapsed ? '1' : '0');
+      } catch (_) {}
+    }
+
+    function restoreVideoSettingsCollapsed() {
+      try {
+        const raw = localStorage.getItem(VIDEO_SETTINGS_COLLAPSED_STORAGE_KEY);
+        setVideoSettingsCollapsed(raw === '1');
+      } catch (_) {
+        setVideoSettingsCollapsed(false);
+      }
+    }
+
+    function getAbsolutePlaybackTime() {
+      if (currentIsLiveStream) return 0;
+      const rel = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+      return Math.max(0, mediaBaseTime + rel);
+    }
+
+    function savePlaybackState(force) {
+      try {
+        const url = String(currentMediaUrl || input.value || '').trim();
+        if (!url) return;
+        const payload = {
+          url: url,
+          is_live: !!currentIsLiveStream,
+          position: currentIsLiveStream ? 0 : getAbsolutePlaybackTime(),
+          known_duration: Number.isFinite(knownDurationSeconds) ? knownDurationSeconds : null,
+          updated_at: Date.now(),
+        };
+        if (!force && !activeSessionId && payload.is_live) return;
+        localStorage.setItem(LAST_PLAYBACK_STORAGE_KEY, JSON.stringify(payload));
+      } catch (_) {}
+    }
+
+    function restoreLastPlaybackFromStorage() {
+      try {
+        const raw = localStorage.getItem(LAST_PLAYBACK_STORAGE_KEY);
+        if (!raw) return false;
+        const saved = JSON.parse(raw);
+        if (!saved || typeof saved.url !== 'string' || !saved.url.trim()) return false;
+        input.value = saved.url.trim();
+        currentMediaUrl = input.value;
+        if (saved.is_live) {
+          return true;
+        }
+        const pos = Number(saved.position);
+        const dur = Number(saved.known_duration);
+        restoreResumeState = {
+          url: input.value,
+          position: Number.isFinite(pos) && pos > 0 ? pos : 0,
+          knownDuration: Number.isFinite(dur) && dur > 0 ? dur : NaN,
+          paused: true,
+        };
+        if (Number.isFinite(restoreResumeState.knownDuration)) {
+          knownDurationSeconds = restoreResumeState.knownDuration;
+        }
+        setTimeout(function () {
+          form.requestSubmit();
+        }, 0);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function getBufferedEndSeconds() {
+      try {
+        const media = currentIsLiveStream ? getLiveTimingMedia() : audio;
+        const ranges = media.buffered;
+        if (!ranges || ranges.length < 1) return NaN;
+        const end = ranges.end(ranges.length - 1);
+        return Number.isFinite(end) ? end : NaN;
+      } catch (_) {
+        return NaN;
+      }
+    }
+
+    async function maybeStartPendingLiveAudio() {
+      if (!currentIsLiveStream || !pendingAudioStart || isPaused) {
+        liveDebugGate('inactive', {
+          live: currentIsLiveStream,
+          pendingAudioStart,
+          isPaused,
+        });
+        return false;
+      }
+      const media = getLiveTimingMedia();
+      if (!hasVideoFrame || media.readyState < 2) {
+        liveDebugGate('waiting media readiness', {
+          hasVideoFrame,
+          mediaReadyState: media.readyState,
+        });
+        return false;
+      }
+      if (liveFirstFrameLoadAtMs > 0) {
+        const nowMs = performance.now();
+        const sinceFirstFrameMs = nowMs - liveFirstFrameLoadAtMs;
+        const frameGateTimedOut = sinceFirstFrameMs >= LIVE_STARTUP_FRAME_GATE_TIMEOUT_MS;
+        const frameGateHardTimedOut = sinceFirstFrameMs >= LIVE_STARTUP_FRAME_GATE_HARD_TIMEOUT_MS;
+        const enoughFrameEvents = liveFrameLoadCount >= LIVE_STARTUP_MIN_FRAME_EVENTS;
+        const frameSpanMs = Math.max(0, liveLastFrameLoadAtMs - liveFirstFrameLoadAtMs);
+        const hasFrameMotion = enoughFrameEvents && frameSpanMs >= LIVE_STARTUP_FRAME_SPAN_MIN_MS;
+        const frameRecentlyUpdated = (nowMs - liveLastFrameLoadAtMs) <= LIVE_STARTUP_FRAME_RECENT_MS;
+        if (!frameGateHardTimedOut) {
+          if (!hasFrameMotion && !frameGateTimedOut) {
+            syncInfo.textContent = 'Sync: waiting for stable video frames...';
+            liveDebugGate('waiting stable frames', {
+              liveFrameLoadCount,
+              frameSpanMs,
+              sinceFirstFrameMs,
+            });
+            return false;
+          }
+          if (!hasFrameMotion && frameGateTimedOut) {
+            syncInfo.textContent = 'Sync: waiting for next video frame...';
+            liveDebugGate('waiting next frame', {
+              liveFrameLoadCount,
+              frameSpanMs,
+              sinceFirstFrameMs,
+            });
+            return false;
+          }
+          if (!frameRecentlyUpdated && !frameGateTimedOut) {
+            syncInfo.textContent = 'Sync: waiting for video motion...';
+            liveDebugGate('waiting frame motion', {
+              sinceLastFrameMs: nowMs - liveLastFrameLoadAtMs,
+              frameSpanMs,
+            });
+            return false;
+          }
+        }
+      }
+      if (!Number.isFinite(liveAudioReadyAtMs) || liveAudioReadyAtMs <= 0) {
+        syncInfo.textContent = 'Sync: waiting for audio buffer...';
+        liveDebugGate('waiting audio buffer', {
+          liveAudioReadyAtMs,
+          mediaReadyState: media.readyState,
+        });
+        return false;
+      }
+      const aMs = liveAudioReadyAtMs;
+      const bMs = performance.now();
+      let startupSeek = Math.max(0, (bMs - aMs) / 1000);
+      const targetOffset = getTargetOffsetSeconds();
+      startupSeek += targetOffset;
+      startupSeek = Math.max(0, Math.min(LIVE_STARTUP_SEEK_MAX, startupSeek));
+      const bufferedEnd = getBufferedEndSeconds();
+
+      if (Number.isFinite(bufferedEnd)) {
+        const latestSafe = Math.max(0, bufferedEnd - LIVE_STARTUP_BUFFER_SLACK);
+        if (startupSeek > latestSafe) {
+          if (performance.now() < liveStartupWaitUntilMs) {
+            syncInfo.textContent = 'Sync: waiting for audio buffer...';
+            liveDebugGate('waiting buffered slack', {
+              startupSeek,
+              latestSafe,
+              bufferedEnd,
+            });
+            return false;
+          }
+          startupSeek = latestSafe;
+        }
+      }
+
+      if (!liveStartupSeekApplied && startupSeek > LIVE_STARTUP_SEEK_THRESHOLD) {
+        try {
+          media.currentTime = startupSeek;
+          syncInfo.textContent = 'Sync: startup align +' + startupSeek.toFixed(2) + 's'
+            + ' (b-a ' + Math.max(0, (bMs - aMs) / 1000).toFixed(2) + 's)';
+        } catch (_) {
+          // Ignore browser seek refusal and continue with rate-only correction.
+        }
+      }
+
+      liveStartupSeekApplied = true;
+      pendingAudioStart = false;
+      syncFilteredError = 0;
+      syncIntegralError = 0;
+      lastSyncSampleAtMs = 0;
+      liveAudioPlayIssuedAtMs = performance.now();
+      liveAwaitingFirstPlaying = true;
+      liveStartupPlayDelayAdjusted = false;
+      updateLiveStartAudioButton();
+      liveDebugLog('startup pass -> attemptAudioPlay', {
+        aMs,
+        bMs,
+        startupSeek,
+        bufferedEnd,
+      });
+      await attemptAudioPlay();
+      return true;
+    }
+
+    function clearSyncTimer() {
+      clearBandwidthMonitorLoop();
+      if (syncTimer !== null) {
+        clearInterval(syncTimer);
+        syncTimer = null;
+      }
+      if (syncSource) {
+        syncSource.close();
+        syncSource = null;
+      }
+    }
+
+    function clearLiveFirstFrameRetry() {
+      if (liveFirstFrameRetryTimer) {
+        clearTimeout(liveFirstFrameRetryTimer);
+        liveFirstFrameRetryTimer = null;
+      }
+    }
+
+    function scheduleLiveFirstFrameRetry() {
+      clearLiveFirstFrameRetry();
+      if (!currentIsLiveStream || isPaused || hasVideoFrame || !activeSessionId) return;
+      liveDebugLog('schedule first-frame retry', {
+        liveFirstFrameRetries,
+        activeSessionId,
+      });
+      liveFirstFrameRetryTimer = setTimeout(function () {
+        liveFirstFrameRetryTimer = null;
+        if (!currentIsLiveStream || isPaused || hasVideoFrame || !activeSessionId) return;
+        if (liveFirstFrameRetries >= 3) {
+          syncInfo.textContent = 'Sync: could not get first video frame';
+          liveDebugLog('first-frame retry exhausted', { liveFirstFrameRetries });
+          return;
+        }
+        liveFirstFrameRetries += 1;
+        liveDebugLog('first-frame retry firing', { liveFirstFrameRetries });
+        suppressStreamError = true;
+        stream.src = '';
+        setStreamFromTime(0);
+        syncInfo.textContent = 'Sync: retrying first video frame... (' + liveFirstFrameRetries + ')';
+      }, 15000);
+    }
+
+    function hidePlexSuggestions() {
+      plexSuggest.style.display = 'none';
+      plexSuggest.innerHTML = '';
+    }
+
+    function hidePlexBrowser() {
+      plexBrowser.style.display = 'none';
+      plexBrowser.innerHTML = '';
+    }
+
+    function clearOverlayTimer() {
+      if (overlayFadeTimer) {
+        clearTimeout(overlayFadeTimer);
+        overlayFadeTimer = null;
+      }
+    }
+
+    function clearControlsHideTimer() {
+      if (controlsHideTimer) {
+        clearTimeout(controlsHideTimer);
+        controlsHideTimer = null;
+      }
+    }
+
+    function showPlayerControls() {
+      playerControls.classList.add('show');
+      clearControlsHideTimer();
+      if (!isPaused) {
+        controlsHideTimer = setTimeout(function () {
+          playerControls.classList.remove('show');
+        }, 2200);
+      }
+    }
+
+    function hidePlayerControlsSoon(delayMs) {
+      clearControlsHideTimer();
+      if (isPaused) return;
+      controlsHideTimer = setTimeout(function () {
+        playerControls.classList.remove('show');
+      }, Number.isFinite(delayMs) ? delayMs : 1400);
+    }
+
+    function renderOffsetValue() {
+      offsetValue.textContent = getTargetOffsetSeconds().toFixed(2) + 's';
+    }
+
+    function updatePlayPauseUi() {
+      overlayPlayPauseBtn.textContent = isPaused ? 'Play' : 'Pause';
+      if (isPaused && activeSessionId) {
+        showOverlay('▶', true, true);
+      } else {
+        screenOverlay.classList.remove('show', 'fade', 'clickable');
+        overlayIcon.classList.remove('clickable');
+      }
+    }
+
+    function updateLiveStartAudioButton() {}
+
+    function formatClock(seconds) {
+      if (!Number.isFinite(seconds) || seconds < 0) return '--:--';
+      const total = Math.floor(seconds);
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      if (h > 0) {
+        return String(h) + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+      }
+      return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    }
+
+    function refreshSeekUi() {
+      const media = currentIsLiveStream ? getLiveTimingMedia() : audio;
+      const relativeCurrent = Number.isFinite(media.currentTime) ? media.currentTime : 0;
+      const current = currentIsLiveStream ? relativeCurrent : (mediaBaseTime + relativeCurrent);
+      const duration = Number.isFinite(media.duration) ? media.duration : NaN;
+      if (!currentIsLiveStream) {
+        const effectiveDuration = (Number.isFinite(knownDurationSeconds) && knownDurationSeconds > 0)
+          ? knownDurationSeconds
+          : duration;
+        const hasDuration = Number.isFinite(effectiveDuration) && effectiveDuration > 0;
+        if (hasDuration) {
+          seekRangeMax = Math.max(1, effectiveDuration);
+        } else {
+          // When browser cannot determine duration from streamed audio,
+          // keep a growing timeline so seeking still works.
+          seekRangeMax = Math.max(seekRangeMax, current + 30);
+        }
+        seekBar.disabled = false;
+        seekBar.max = String(seekRangeMax);
+        if (!isSeeking) {
+          seekBar.value = String(Math.max(0, Math.min(seekRangeMax, current)));
+        }
+        timeLabel.textContent = formatClock(current) + ' / ' + (hasDuration ? formatClock(effectiveDuration) : '--:--');
+        return;
+      }
+
+      seekBar.disabled = true;
+      seekBar.max = '100';
+      if (!isSeeking) seekBar.value = '0';
+      timeLabel.textContent = formatClock(current) + ' / Live';
+    }
+
+    function showOverlay(icon, persistent, clickable) {
+      clearOverlayTimer();
+      overlayIcon.textContent = icon;
+      overlayIcon.classList.toggle('clickable', !!clickable);
+      screenOverlay.classList.toggle('clickable', !!clickable);
+      screenOverlay.classList.remove('fade');
+      screenOverlay.classList.add('show');
+      if (!persistent) {
+        screenOverlay.classList.add('fade');
+        overlayFadeTimer = setTimeout(function () {
+          screenOverlay.classList.remove('show', 'fade', 'clickable');
+          overlayIcon.classList.remove('clickable');
+        }, 780);
+      }
+    }
+
+    async function loadPlexItem(item) {
+      try {
+        statusEl.style.display = 'block';
+        statusEl.textContent = 'Resolving Plex item...';
+        const res = await fetch('./plex/load?id=' + encodeURIComponent(item.content_id) + '&type=' + encodeURIComponent(item.type), { cache: 'no-store' });
+        if (!res.ok) throw new Error('plex load failed');
+        const data = await res.json();
+        if (!data.url) throw new Error('missing media url');
+        input.value = data.url;
+        if (data.title) {
+          plexSearch.value = data.title;
+        }
+        hidePlexSuggestions();
+        hidePlexBrowser();
+        form.requestSubmit();
+      } catch (_) {
+        statusEl.style.display = 'block';
+        statusEl.textContent = 'Could not load Plex item.';
+      }
+    }
+
+    function renderPlexBrowser(items, headerText, onClickItem, backHandler) {
+      plexBrowser.innerHTML = '';
+      const header = document.createElement('div');
+      header.className = 'plex-header';
+      if (backHandler) {
+        const backBtn = document.createElement('button');
+        backBtn.type = 'button';
+        backBtn.className = 'plex-back';
+        backBtn.textContent = 'Back';
+        backBtn.addEventListener('click', backHandler);
+        header.appendChild(backBtn);
+      }
+      const label = document.createElement('span');
+      label.textContent = headerText;
+      header.appendChild(label);
+      plexBrowser.appendChild(header);
+
+      for (const item of items) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'plex-item';
+        const titleNode = document.createElement('span');
+        titleNode.textContent = item.title || 'Item';
+        btn.appendChild(titleNode);
+        btn.addEventListener('click', function () {
+          onClickItem(item);
+        });
+        plexBrowser.appendChild(btn);
+      }
+      plexBrowser.style.display = 'block';
+    }
+
+    async function openPlexSeries(item) {
+      try {
+        const seasonRes = await fetch('./plex/seasons?id=' + encodeURIComponent(item.content_id), { cache: 'no-store' });
+        if (!seasonRes.ok) throw new Error('seasons failed');
+        const seasonData = await seasonRes.json();
+        const seasons = seasonData.results || [];
+        if (!seasons.length) {
+          statusEl.style.display = 'block';
+          statusEl.textContent = 'No seasons found for that series.';
+          return;
+        }
+        hidePlexSuggestions();
+        renderPlexBrowser(
+          seasons.map(s => ({ ...s, title: s.title + (s.leaf_count ? ' (' + s.leaf_count + ')' : '') })),
+          'Seasons - ' + (item.title || 'Series'),
+          async function (season) {
+            try {
+              const epRes = await fetch('./plex/episodes?id=' + encodeURIComponent(season.id), { cache: 'no-store' });
+              if (!epRes.ok) throw new Error('episodes failed');
+              const epData = await epRes.json();
+              const episodes = (epData.results || []).map(ep => ({ ...ep, type: 'episode', content_id: ep.id }));
+              renderPlexBrowser(
+                episodes.map(ep => ({ ...ep, title: 'E' + String(ep.index).padStart(2, '0') + ' - ' + ep.title })),
+                'Episodes - ' + season.title,
+                function (ep) {
+                  loadPlexItem(ep);
+                },
+                function () {
+                  openPlexSeries(item);
+                }
+              );
+            } catch (_) {
+              statusEl.style.display = 'block';
+              statusEl.textContent = 'Could not load episodes.';
+            }
+          },
+          function () {
+            hidePlexBrowser();
+          }
+        );
+      } catch (_) {
+        statusEl.style.display = 'block';
+        statusEl.textContent = 'Could not load seasons.';
+      }
+    }
+
+    function renderPlexSuggestions(results) {
+      if (!results || !results.length) {
+        hidePlexSuggestions();
+        return;
+      }
+      plexSuggest.innerHTML = '';
+      for (const item of results) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'plex-item';
+        const titleNode = document.createElement('span');
+        titleNode.textContent = String(item.title || '');
+        const typeNode = document.createElement('small');
+        typeNode.textContent = '(' + String(item.type || '') + ')';
+        btn.appendChild(titleNode);
+        btn.appendChild(typeNode);
+        btn.addEventListener('click', function () {
+          if (String(item.type || '').toLowerCase() === 'series') {
+            openPlexSeries(item);
+            return;
+          }
+          loadPlexItem(item);
+        });
+        plexSuggest.appendChild(btn);
+      }
+      plexSuggest.style.display = 'block';
+    }
+
+    function getTargetOffsetSeconds() {
+      const value = Number(syncTargetInput.value);
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    function nudgeSyncTarget(delta) {
+      const current = getTargetOffsetSeconds();
+      const next = Math.round((current + delta) * 100) / 100;
+      syncTargetInput.value = next.toFixed(2);
+      renderOffsetValue();
+      previousSyncTarget = next;
+      manualOffsetEdited = true;
+      liveTunerActive = false;
+      manualNudgeDirection = Math.sign(delta);
+      manualNudgeUntilMs = Date.now() + 1400;
+      syncInfo.textContent = 'Sync: manual offset ' + next.toFixed(2) + 's';
+    }
+
+    function isLikelyLiveStream(url) {
+      const value = String(url || '').toLowerCase();
+      return value.includes('/proxy/ts/stream/')
+        || value.includes('.m3u8')
+        || value.includes('/live/')
+        || (value.includes('stream.mpg') && value.includes('format=ts'))
+        || value.includes('codec=copy');
+    }
+
+    function setStreamFromTime(seconds) {
+      const stamp = Date.now();
+      const start = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
+      const settings = getVideoSettings();
+      liveDebugLog('setStreamFromTime', {
+        sid: activeSessionId,
+        start,
+        live: currentIsLiveStream,
+        fps_mode: settings.fpsMode,
+        fps: settings.fps,
+        q: settings.q,
+      });
+      stream.src = './mjpeg?sid=' + encodeURIComponent(activeSessionId)
+        + '&start=' + start.toFixed(3)
+        + '&fps_mode=' + encodeURIComponent(settings.fpsMode)
+        + '&fps=' + settings.fps
+        + '&q=' + settings.q
+        + '&t=' + stamp;
+    }
+
+    function setAudioFromTime(seconds) {
+      const stamp = Date.now();
+      const start = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
+      if (currentIsLiveStream) {
+        liveTimingMode = 'master';
+        liveDebugLog('setAudioFromTime(live)', {
+          sid: activeSessionId,
+          start,
+          mode: 'master',
+        });
+        liveMasterVideo.src = './audio?sid=' + encodeURIComponent(activeSessionId) + '&start=' + start.toFixed(3) + '&t=' + stamp;
+        liveMasterVideo.load();
+        audio.pause();
+        audio.src = '';
+        return;
+      }
+      audio.src = './audio?sid=' + encodeURIComponent(activeSessionId) + '&start=' + start.toFixed(3) + '&t=' + stamp;
+      audio.load();
+    }
+
+    function applyCurrentVideoSettings() {
+      syncVideoSettingsInputs();
+      saveVideoSettings();
+      if (!activeSessionId) return;
+      suppressStreamError = true;
+      hasVideoFrame = false;
+      lastVideoClock = 0;
+      const target = currentIsLiveStream
+        ? 0
+        : Math.max(0, mediaBaseTime + (Number.isFinite(audio.currentTime) ? audio.currentTime : 0));
+      stream.src = '';
+      setStreamFromTime(target);
+      statusEl.style.display = 'block';
+      statusEl.textContent = 'Applying video settings...';
+    }
+
+    function captureFrameDataUrl() {
+      try {
+        if (!stream.naturalWidth || !stream.naturalHeight) return '';
+        const canvas = document.createElement('canvas');
+        canvas.width = stream.naturalWidth;
+        canvas.height = stream.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return '';
+        ctx.drawImage(stream, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL('image/jpeg', 0.85);
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function freezeCurrentVideoFrame() {
+      pausedFrameDataUrl = captureFrameDataUrl();
+      suppressStreamError = true;
+      if (pausedFrameDataUrl) {
+        stream.src = pausedFrameDataUrl;
+        stream.style.display = 'block';
+      } else {
+        stream.src = '';
+      }
+      audio.pause();
+      audio.playbackRate = 1.0;
+      updatePlayPauseUi();
+      refreshSeekUi();
+      showPlayerControls();
+    }
+
+    function clearLiveVideoHoldTimer() {
+      if (liveVideoHoldTimer) {
+        clearTimeout(liveVideoHoldTimer);
+        liveVideoHoldTimer = null;
+      }
+    }
+
+    function clearLiveAudioHoldTimer() {
+      if (liveAudioHoldTimer) {
+        clearTimeout(liveAudioHoldTimer);
+        liveAudioHoldTimer = null;
+      }
+    }
+
+    function startLiveVideoHold(errorSeconds) {
+      if (!currentIsLiveStream || !LIVE_USE_VIDEO_HOLD_CATCHUP || liveVideoHoldActive) return false;
+      const behindBy = Math.max(0, -errorSeconds);
+      if (behindBy < LIVE_VIDEO_HOLD_TRIGGER_SECONDS) return false;
+      const holdMs = Math.max(LIVE_VIDEO_HOLD_MIN_MS, Math.min(LIVE_VIDEO_HOLD_MAX_MS, behindBy * 1000));
+      const frame = captureFrameDataUrl();
+      if (!frame) return false;
+      suppressStreamError = true;
+      stream.src = frame;
+      stream.style.display = 'block';
+      liveVideoHoldActive = true;
+      liveVideoHoldUntilMs = performance.now() + holdMs;
+      clearLiveVideoHoldTimer();
+      liveVideoHoldTimer = setTimeout(function () {
+        liveVideoHoldTimer = null;
+        releaseLiveVideoHold();
+      }, holdMs + 20);
+      syncInfo.textContent = 'Sync: holding video ' + (holdMs / 1000).toFixed(2) + 's to catch audio';
+      liveDebugLog('video hold start', { errorSeconds, holdMs });
+      return true;
+    }
+
+    function releaseLiveVideoHold() {
+      if (!liveVideoHoldActive || !currentIsLiveStream || !activeSessionId) return;
+      clearLiveVideoHoldTimer();
+      liveVideoHoldActive = false;
+      liveVideoHoldUntilMs = 0;
+      liveHoldCooldownUntilMs = performance.now() + LIVE_HOLD_COOLDOWN_MS;
+      suppressStreamError = true;
+      setStreamFromTime(0);
+      syncInfo.textContent = 'Sync: resuming live video';
+      liveDebugLog('video hold release', {});
+    }
+
+    function startLiveAudioHold(errorSeconds, media) {
+      if (!currentIsLiveStream || liveAudioHoldActive) return false;
+      const aheadBy = Math.max(0, errorSeconds);
+      if (aheadBy < LIVE_AUDIO_HOLD_TRIGGER_SECONDS) return false;
+      const holdMs = Math.max(LIVE_AUDIO_HOLD_MIN_MS, Math.min(LIVE_AUDIO_HOLD_MAX_MS, aheadBy * 1000));
+      liveAudioHoldActive = true;
+      clearLiveAudioHoldTimer();
+      try {
+        media.pause();
+      } catch (_) {}
+      liveAudioHoldTimer = setTimeout(async function () {
+        liveAudioHoldTimer = null;
+        if (!liveAudioHoldActive) return;
+        liveAudioHoldActive = false;
+        liveHoldCooldownUntilMs = performance.now() + LIVE_HOLD_COOLDOWN_MS;
+        if (!isPaused) {
+          try {
+            await media.play();
+          } catch (_) {}
+        }
+        liveDebugLog('audio hold release', { holdMs });
+      }, holdMs + 20);
+      syncInfo.textContent = 'Sync: holding audio ' + (holdMs / 1000).toFixed(2) + 's to catch video';
+      liveDebugLog('audio hold start', { errorSeconds, holdMs });
+      return true;
+    }
+
+    function applySyncCorrection(clockPayload) {
+      const media = currentIsLiveStream ? getLiveTimingMedia() : audio;
+      let videoClock = NaN;
+      if (clockPayload && typeof clockPayload === 'object') {
+        videoClock = Number(clockPayload.video_clock);
+        const videoRaw = Number(clockPayload.video_raw_clock);
+        const audioRaw = Number(clockPayload.audio_raw_clock);
+        const audioOriginRaw = Number(clockPayload.audio_origin_raw);
+        if (Number.isFinite(videoRaw)) {
+          lastVideoRawClock = videoRaw;
+        }
+        if (Number.isFinite(audioRaw)) {
+          lastAudioRawClock = audioRaw;
+        }
+        if (Number.isFinite(audioOriginRaw)) {
+          liveAudioOriginRawClock = audioOriginRaw;
+        }
+      } else {
+        videoClock = Number(clockPayload);
+      }
+      if (!Number.isFinite(videoClock) || media.paused || !Number.isFinite(media.currentTime) || media.readyState < 2) {
+        return;
+      }
+      if (videoClock <= lastVideoClock) {
+        return;
+      }
+      lastVideoClock = videoClock;
+
+      const normalizedDrift = media.currentTime - videoClock;
+      let sourceDrift = NaN;
+      const useSourceDrift = currentIsLiveStream
+        && liveTimingMode === 'master'
+        && Number.isFinite(lastVideoRawClock)
+        && Number.isFinite(liveAudioOriginRawClock);
+      if (useSourceDrift) {
+        const audioSourceNow = liveAudioOriginRawClock + media.currentTime;
+        sourceDrift = audioSourceNow - lastVideoRawClock;
+      }
+      const drift = Number.isFinite(sourceDrift) ? sourceDrift : normalizedDrift;
+      if (currentIsLiveStream && Number.isFinite(lastVideoRawClock) && Number.isFinite(lastAudioRawClock)) {
+        const rawGap = lastVideoRawClock - lastAudioRawClock;
+        if (Number.isFinite(rawGap) && rawGap >= 0 && rawGap < 20) {
+          const clampedGap = Math.max(0, Math.min(LIVE_PIPELINE_GAP_MAX, rawGap));
+          livePipelineGapEstimate = (livePipelineGapEstimate * (1 - LIVE_PIPELINE_GAP_ALPHA)) + (clampedGap * LIVE_PIPELINE_GAP_ALPHA);
+        }
+      }
+      if (currentIsLiveStream && liveTunerActive && !liveTunerApplied && !manualOffsetEdited) {
+        const now = Date.now();
+        if (now - liveTunerStartAt <= LIVE_TUNER_WINDOW_MS) {
+          if (Number.isFinite(drift) && Math.abs(drift) < 30) {
+            liveTunerSamples.push(drift);
+          }
+          if (liveTunerSamples.length >= LIVE_TUNER_MIN_SAMPLES) {
+            const sorted = liveTunerSamples.slice().sort((a, b) => a - b);
+            const median = sorted[Math.floor(sorted.length / 2)];
+            const tuned = Math.max(-LIVE_TUNER_MAX_ABS_TARGET, Math.min(LIVE_TUNER_MAX_ABS_TARGET, median * 0.2));
+            syncTargetInput.value = tuned.toFixed(2);
+            renderOffsetValue();
+            liveTunerApplied = true;
+            syncInfo.textContent = 'Sync: auto-tuned offset to ' + tuned.toFixed(2) + 's';
+          }
+        } else {
+          liveTunerApplied = true;
+        }
+      }
+
+      const targetOffset = getTargetOffsetSeconds();
+      const effectiveTargetOffset = targetOffset;
+      const error = drift - effectiveTargetOffset;
+      const absError = Math.abs(error);
+      const nowMs = performance.now();
+      const dt = lastSyncSampleAtMs
+        ? Math.max(0.05, Math.min(0.6, (nowMs - lastSyncSampleAtMs) / 1000))
+        : 0.2;
+      lastSyncSampleAtMs = nowMs;
+
+      if (!currentIsLiveStream && currentSessionMode === 'buffered_live') {
+        const nowWall = Date.now();
+        const canHardAlign = (nowWall - lastLiveHardSyncAtMs) >= LIVE_HARD_SYNC_COOLDOWN_MS;
+        if (absError >= 0.9 && canHardAlign) {
+          const step = Math.max(-LIVE_HARD_SYNC_MAX_STEP, Math.min(LIVE_HARD_SYNC_MAX_STEP, -error));
+          if (Math.abs(step) > 0.25) {
+            try {
+              media.currentTime = Math.max(0, media.currentTime + step);
+              lastLiveHardSyncAtMs = nowWall;
+              syncFilteredError = 0;
+              syncIntegralError = 0;
+              media.playbackRate = 1.0;
+              syncInfo.textContent = 'Sync: buffered align ' + step.toFixed(2) + 's';
+              return;
+            } catch (_) {}
+          }
+        }
+        media.playbackRate = 1.0;
+      }
+
+      if (currentIsLiveStream && error > 0 && absError >= LIVE_HARD_SYNC_THRESHOLD) {
+        const nowWall = Date.now();
+        if ((nowWall - lastLiveHardSyncAtMs) >= LIVE_HARD_SYNC_COOLDOWN_MS) {
+          const step = Math.max(-LIVE_HARD_SYNC_MAX_STEP, Math.min(LIVE_HARD_SYNC_MAX_STEP, -error));
+          if (Math.abs(step) > 0.2) {
+            try {
+              media.currentTime = Math.max(0, media.currentTime + step);
+              lastLiveHardSyncAtMs = nowWall;
+              syncFilteredError = 0;
+              syncIntegralError = 0;
+              syncInfo.textContent = 'Sync: hard align ' + step.toFixed(2) + 's';
+              return;
+            } catch (_) {}
+          }
+        }
+      }
+
+      if (currentIsLiveStream && LIVE_USE_VIDEO_HOLD_CATCHUP) {
+        if (nowMs < liveHoldCooldownUntilMs) {
+          media.playbackRate = 1.0;
+          return;
+        }
+        if (liveVideoHoldActive) {
+          media.playbackRate = 1.0;
+          if (nowMs >= liveVideoHoldUntilMs) {
+            releaseLiveVideoHold();
+          }
+          return;
+        }
+        if (liveAudioHoldActive) {
+          media.playbackRate = 1.0;
+          return;
+        }
+        if (startLiveVideoHold(error)) {
+          media.playbackRate = 1.0;
+          return;
+        }
+      }
+
+      if (LIVE_ALLOW_EDGE_SNAP && currentIsLiveStream) {
+        const now = Date.now();
+        const edgeCooldownPassed = (now - lastLiveEdgeSnapAtMs) >= LIVE_AUDIO_EDGE_SNAP_COOLDOWN_MS;
+        if (edgeCooldownPassed) {
+          const bufferedEnd = getBufferedEndSeconds();
+          if (Number.isFinite(bufferedEnd)) {
+            const bufferedLag = bufferedEnd - media.currentTime;
+            if (Number.isFinite(bufferedLag) && bufferedLag > LIVE_AUDIO_EDGE_LAG_THRESHOLD) {
+              const targetEdge = Math.max(0, bufferedEnd - LIVE_STARTUP_BUFFER_SLACK);
+              if (targetEdge > media.currentTime + 0.25) {
+                const step = targetEdge - media.currentTime;
+                try {
+                  media.currentTime = targetEdge;
+                  lastLiveEdgeSnapAtMs = now;
+                  syncFilteredError = 0;
+                  syncIntegralError = 0;
+                  syncInfo.textContent = 'Sync: edge snap +' + step.toFixed(2) + 's';
+                  return;
+                } catch (_) {}
+              }
+            }
+          }
+        }
+      }
+
+      if (LIVE_ALLOW_LARGE_SEEK_CORRECTIONS && currentIsLiveStream && absError > LIVE_LARGE_DRIFT_CORRECTION_THRESHOLD) {
+        const cooldownPassed = (Date.now() - lastLargeDriftCorrectionAtMs) >= LIVE_LARGE_DRIFT_CORRECTION_COOLDOWN_MS;
+        if (cooldownPassed) {
+          const step = Math.max(
+            -LIVE_LARGE_DRIFT_CORRECTION_MAX_STEP,
+            Math.min(LIVE_LARGE_DRIFT_CORRECTION_MAX_STEP, -error)
+          );
+          if (Math.abs(step) > 0.35) {
+            try {
+              media.currentTime = Math.max(0, media.currentTime + step);
+              lastLargeDriftCorrectionAtMs = Date.now();
+              syncFilteredError = 0;
+              syncIntegralError = 0;
+              syncInfo.textContent = 'Sync: large drift correction ' + step.toFixed(2) + 's';
+              return;
+            } catch (_) {
+              // Fall back to playback-rate-only correction.
+            }
+          }
+        }
+      }
+
+      if (LIVE_ALLOW_BUFFERED_CATCHUP && currentIsLiveStream && error < -LIVE_BUFFERED_CATCHUP_THRESHOLD) {
+        const now = Date.now();
+        const cooldownPassed = (now - lastLiveBufferedCatchupAtMs) >= LIVE_BUFFERED_CATCHUP_COOLDOWN_MS;
+        if (cooldownPassed) {
+          const bufferedEnd = getBufferedEndSeconds();
+          if (Number.isFinite(bufferedEnd)) {
+            const latestSafe = Math.max(0, bufferedEnd - LIVE_STARTUP_BUFFER_SLACK);
+            const availableAdvance = latestSafe - media.currentTime;
+            if (availableAdvance > 0.45) {
+              const desired = Math.min(LIVE_BUFFERED_CATCHUP_MAX_STEP, -error);
+              const step = Math.max(0, Math.min(desired, availableAdvance));
+              if (step > 0.4) {
+                try {
+                  media.currentTime = Math.max(0, media.currentTime + step);
+                  lastLiveBufferedCatchupAtMs = now;
+                  syncFilteredError = 0;
+                  syncIntegralError = 0;
+                  syncInfo.textContent = 'Sync: live catch-up +' + step.toFixed(2) + 's';
+                  return;
+                } catch (_) {
+                  // Keep rate-based control path if browser blocks the jump.
+                }
+              }
+            }
+          }
+        }
+      }
+
+      syncFilteredError = (syncFilteredError * 0.78) + (error * 0.22);
+      if (Math.abs(error) > LIVE_DEAD_BAND) {
+        syncIntegralError += error * dt;
+        syncIntegralError = Math.max(-LIVE_RATE_INTEGRAL_CLAMP, Math.min(LIVE_RATE_INTEGRAL_CLAMP, syncIntegralError));
+      } else {
+        syncIntegralError *= 0.85;
+      }
+
+      let rateMin = LIVE_RATE_MIN;
+      let rateMax = LIVE_RATE_MAX;
+      if (absError > 2.5) {
+        rateMin = LIVE_RATE_MIN_VERY_LARGE;
+        rateMax = LIVE_RATE_MAX_VERY_LARGE;
+      } else if (absError > 1.0) {
+        rateMin = LIVE_RATE_MIN_LARGE;
+        rateMax = LIVE_RATE_MAX_LARGE;
+      }
+
+      let targetRate = 1 - ((LIVE_RATE_P * syncFilteredError) + (LIVE_RATE_I * syncIntegralError));
+      targetRate = Math.max(rateMin, Math.min(rateMax, targetRate));
+
+      if (Date.now() < manualNudgeUntilMs) {
+        if (manualNudgeDirection > 0) {
+          targetRate = Math.max(targetRate, 1.12);
+        } else if (manualNudgeDirection < 0) {
+          targetRate = Math.min(targetRate, 0.88);
+        }
+      } else {
+        manualNudgeDirection = 0;
+      }
+
+      const currentRate = Number.isFinite(media.playbackRate) ? media.playbackRate : 1.0;
+      const nextRate = currentRate + ((targetRate - currentRate) * LIVE_RATE_SLEW);
+      media.playbackRate = Math.max(0.5, Math.min(4.0, nextRate));
+      syncInfo.textContent = 'Sync err: ' + error.toFixed(3) + 's'
+        + (Number.isFinite(sourceDrift) ? ' (src ' + sourceDrift.toFixed(3) + 's)' : '')
+        + (currentIsLiveStream ? ' (timing:video)' : '')
+        + ' | rate ' + media.playbackRate.toFixed(3)
+        + (currentIsLiveStream && LIVE_USE_VIDEO_HOLD_CATCHUP ? (liveVideoHoldActive ? ' | hold:on' : ' | hold:off') : '');
+    }
+
+    function startSyncLoop(sid) {
+      clearSyncTimer();
+      if (window.EventSource) {
+        syncSource = new EventSource('./session/events?sid=' + encodeURIComponent(sid));
+        syncSource.addEventListener('clock', function (event) {
+          if (!sid || sid !== activeSessionId) return;
+          try {
+            const data = JSON.parse(event.data);
+            applySyncCorrection(data);
+            if (currentIsLiveStream && pendingAudioStart) {
+              maybeStartPendingLiveAudio().catch(function () {});
+            }
+          } catch (_) {}
+        });
+        syncSource.addEventListener('close', function () {
+          if (syncSource) {
+            syncSource.close();
+            syncSource = null;
+          }
+        });
+        syncSource.onerror = function () {
+          // Browser auto-reconnect handles transient issues.
+        };
+        return;
+      }
+
+      // Fallback for older browsers without EventSource.
+      syncTimer = setInterval(async function () {
+        if (!sid || sid !== activeSessionId) return;
+        try {
+          const res = await fetch('./session/clock?sid=' + encodeURIComponent(sid) + '&t=' + Date.now(), { cache: 'no-store' });
+          if (!res.ok) return;
+          const data = await res.json();
+          applySyncCorrection(data);
+          if (currentIsLiveStream && pendingAudioStart) {
+            maybeStartPendingLiveAudio().catch(function () {});
+          }
+        } catch (_) {}
+      }, 800);
+    }
+
+    async function attemptAudioPlay() {
+      const media = currentIsLiveStream ? getLiveTimingMedia() : audio;
+      try {
+        await media.play();
+        syncInfo.textContent = hasVideoFrame ? 'Sync: running' : 'Sync: audio running, waiting for video frame...';
+        isPaused = false;
+        updatePlayPauseUi();
+        updateLiveStartAudioButton();
+        refreshSeekUi();
+        return true;
+      } catch (_) {
+        syncInfo.textContent = 'Sync: audio blocked by browser autoplay. Press Play in the overlay controls.';
+        isPaused = true;
+        updatePlayPauseUi();
+        updateLiveStartAudioButton();
+        return false;
+      }
+    }
+
+    async function pauseBoth() {
+      isPaused = true;
+      pendingAudioStart = false;
+      liveStartupWaitUntilMs = 0;
+      liveStartupSeekApplied = false;
+      syncFilteredError = 0;
+      syncIntegralError = 0;
+      lastSyncSampleAtMs = 0;
+      lastLiveBufferedCatchupAtMs = 0;
+      lastLiveEdgeSnapAtMs = 0;
+      lastVideoRawClock = NaN;
+      lastAudioRawClock = NaN;
+      liveAudioOriginRawClock = NaN;
+      liveAudioPlayIssuedAtMs = 0;
+      liveAwaitingFirstPlaying = false;
+      liveStartupPlayDelayAdjusted = false;
+      liveFrameLoadCount = 0;
+      liveFirstFrameLoadAtMs = 0;
+      liveLastFrameLoadAtMs = 0;
+      livePipelineGapEstimate = 0;
+      liveVideoHoldActive = false;
+      liveVideoHoldUntilMs = 0;
+      clearLiveVideoHoldTimer();
+      liveAudioHoldActive = false;
+      clearLiveAudioHoldTimer();
+      liveHoldCooldownUntilMs = 0;
+      lastLiveHardSyncAtMs = 0;
+      const safeAudioPos = mediaBaseTime + (Number.isFinite(audio.currentTime) ? audio.currentTime : 0);
+      pausePositionSeconds = Math.max(0, safeAudioPos, mediaBaseTime + (Number(lastVideoClock) || 0));
+      pausedFrameDataUrl = captureFrameDataUrl();
+      audio.pause();
+      audio.playbackRate = 1.0;
+      if (currentIsLiveStream) {
+        const media = getLiveTimingMedia();
+        media.pause();
+        media.playbackRate = 1.0;
+      }
+      suppressStreamError = true;
+      if (pausedFrameDataUrl) {
+        stream.src = pausedFrameDataUrl;
+        stream.style.display = 'block';
+      } else {
+        stream.src = '';
+      }
+      updatePlayPauseUi();
+      updateLiveStartAudioButton();
+      refreshSeekUi();
+      showPlayerControls();
+      statusEl.style.display = 'none';
+      showOverlay('▶', true, true);
+      savePlaybackState(true);
+    }
+
+    async function playBoth() {
+      if (!activeSessionId) return;
+      isPaused = false;
+      const startFrom = pausePositionSeconds > 0
+        ? pausePositionSeconds
+        : (mediaBaseTime + (Number.isFinite(audio.currentTime) ? audio.currentTime : 0));
+      if (currentIsLiveStream) {
+        liveTimingMode = 'master';
+        hasVideoFrame = false;
+        lastVideoClock = 0;
+        setStreamFromTime(0);
+        setAudioFromTime(0);
+        pendingAudioStart = true;
+        liveAudioRequestedAtMs = performance.now();
+        liveAudioReadyAtMs = 0;
+        liveFirstFrameAtMs = 0;
+        liveStartupSeekApplied = false;
+        liveStartupWaitUntilMs = performance.now() + Math.max(LIVE_STARTUP_BUFFER_WAIT_MS, LIVE_STARTUP_CLOCK_WAIT_MS);
+        syncFilteredError = 0;
+        syncIntegralError = 0;
+        lastSyncSampleAtMs = 0;
+        lastLiveAudioReloadAtMs = 0;
+        lastLiveBufferedCatchupAtMs = 0;
+        lastLiveEdgeSnapAtMs = 0;
+        lastVideoRawClock = NaN;
+        lastAudioRawClock = NaN;
+        liveAudioOriginRawClock = NaN;
+        liveAudioPlayIssuedAtMs = 0;
+        liveAwaitingFirstPlaying = false;
+        liveStartupPlayDelayAdjusted = false;
+        liveFrameLoadCount = 0;
+        liveFirstFrameLoadAtMs = 0;
+        liveLastFrameLoadAtMs = 0;
+        livePipelineGapEstimate = 0;
+        liveVideoHoldActive = false;
+        liveVideoHoldUntilMs = 0;
+        clearLiveVideoHoldTimer();
+        liveAudioHoldActive = false;
+        clearLiveAudioHoldTimer();
+        liveHoldCooldownUntilMs = 0;
+        lastLiveHardSyncAtMs = 0;
+        isPaused = false;
+        updatePlayPauseUi();
+        updateLiveStartAudioButton();
+      } else {
+        mediaBaseTime = startFrom;
+        setAudioFromTime(startFrom);
+        const audioStarted = await attemptAudioPlay();
+        const videoStart = audioStarted
+          ? Math.max(0, startFrom + (Number.isFinite(audio.currentTime) ? audio.currentTime : 0))
+          : startFrom;
+        setStreamFromTime(videoStart);
+      }
+      pausePositionSeconds = 0;
+      pausedFrameDataUrl = '';
+      updatePlayPauseUi();
+      updateLiveStartAudioButton();
+      refreshSeekUi();
+      showPlayerControls();
+      statusEl.style.display = 'none';
+      showOverlay('▶', false, false);
+      savePlaybackState(true);
+    }
+
+    form.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      const url = input.value.trim();
+      if (!url) return;
+      currentMediaUrl = url;
+      currentSessionMode = 'direct';
+      const restoringThisSubmit = !!(restoreResumeState && restoreResumeState.url === url);
+      const restoreStartPaused = !!(restoreResumeState && restoreResumeState.url === url && restoreResumeState.paused);
+      const requestedStart = (!isLikelyLiveStream(url) && restoringThisSubmit)
+        ? Math.max(0, Number(restoreResumeState.position) || 0)
+        : 0;
+      if (restoringThisSubmit && Number.isFinite(restoreResumeState.knownDuration) && restoreResumeState.knownDuration > 0) {
+        knownDurationSeconds = restoreResumeState.knownDuration;
+      }
+      restoreResumeState = null;
+
+      statusEl.textContent = 'Connecting...';
+      statusEl.style.display = 'block';
+      stream.style.display = 'none';
+      syncInfo.textContent = 'Sync: preparing session...';
+      clearSyncTimer();
+      audio.pause();
+      audio.src = '';
+      liveMasterVideo.pause();
+      liveMasterVideo.src = '';
+      pendingAudioStart = true;
+      liveAudioRequestedAtMs = 0;
+      liveAudioReadyAtMs = 0;
+      liveFirstFrameAtMs = 0;
+      liveStartupSeekApplied = false;
+      liveStartupWaitUntilMs = 0;
+      activeSessionId = '';
+      lastVideoClock = 0;
+      lastSyncSampleAtMs = 0;
+      hasVideoFrame = false;
+      liveFirstFrameRetries = 0;
+      clearLiveFirstFrameRetry();
+      isPaused = false;
+      currentIsLiveStream = isLikelyLiveStream(url);
+      liveTimingMode = 'master';
+      lastLargeDriftCorrectionAtMs = 0;
+      lastLiveAudioReloadAtMs = 0;
+      lastLiveBufferedCatchupAtMs = 0;
+      lastLiveEdgeSnapAtMs = 0;
+      lastVideoRawClock = NaN;
+      lastAudioRawClock = NaN;
+      liveAudioOriginRawClock = NaN;
+      liveAudioPlayIssuedAtMs = 0;
+      liveAwaitingFirstPlaying = false;
+      liveStartupPlayDelayAdjusted = false;
+      liveFrameLoadCount = 0;
+      liveFirstFrameLoadAtMs = 0;
+      liveLastFrameLoadAtMs = 0;
+      livePipelineGapEstimate = 0;
+      liveVideoHoldActive = false;
+      liveVideoHoldUntilMs = 0;
+      clearLiveVideoHoldTimer();
+      liveAudioHoldActive = false;
+      clearLiveAudioHoldTimer();
+      liveHoldCooldownUntilMs = 0;
+      lastLiveHardSyncAtMs = 0;
+      mediaBaseTime = 0;
+      pausePositionSeconds = 0;
+      pausedFrameDataUrl = '';
+      manualOffsetEdited = false;
+      liveTunerActive = false;
+      liveTunerApplied = false;
+      liveTunerStartAt = Date.now();
+      liveTunerSamples = [];
+      syncFilteredError = 0;
+      syncIntegralError = 0;
+      previousSyncTarget = getTargetOffsetSeconds();
+      manualNudgeDirection = 0;
+      manualNudgeUntilMs = 0;
+      seekRangeMax = 100;
+      knownDurationSeconds = NaN;
+      isSeeking = false;
+      overlayPlayPauseBtn.disabled = true;
+      updatePlayPauseUi();
+      updateLiveStartAudioButton();
+      refreshSeekUi();
+      screenOverlay.classList.remove('show', 'fade');
+      showPlayerControls();
+
+      try {
+        const startRes = await fetch('./session/start?url=' + encodeURIComponent(url), { cache: 'no-store' });
+        if (!startRes.ok) throw new Error('session start failed');
+        const data = await startRes.json();
+        if (!data.sid) throw new Error('missing sid');
+        if (Number.isFinite(Number(data.duration)) && Number(data.duration) > 0) {
+          knownDurationSeconds = Number(data.duration);
+        }
+        const bufferedLiveMode = data.mode === 'buffered_live';
+        currentSessionMode = String(data.mode || 'direct');
+
+        activeSessionId = data.sid;
+        if (bufferedLiveMode) {
+          currentIsLiveStream = false;
+          liveDebugLog('session mode buffered_live -> using non-live playback path', { sid: activeSessionId });
+        }
+        mediaBaseTime = 0;
+        if (currentIsLiveStream) {
+          setStreamFromTime(0);
+          setAudioFromTime(0);
+          pendingAudioStart = true;
+          liveAudioRequestedAtMs = performance.now();
+          liveAudioReadyAtMs = 0;
+          liveFirstFrameAtMs = 0;
+          liveStartupSeekApplied = false;
+          liveStartupWaitUntilMs = performance.now() + Math.max(LIVE_STARTUP_BUFFER_WAIT_MS, LIVE_STARTUP_CLOCK_WAIT_MS);
+          isPaused = false;
+          updatePlayPauseUi();
+          syncInfo.textContent = 'Sync: waiting for video frame...';
+          scheduleLiveFirstFrameRetry();
+        } else {
+          mediaBaseTime = requestedStart;
+          if (restoreStartPaused) {
+            pendingAudioStart = false;
+            freezeOnNextFrame = true;
+            isPaused = true;
+            pausePositionSeconds = requestedStart;
+            updatePlayPauseUi();
+          }
+          setAudioFromTime(requestedStart);
+          let audioStarted = false;
+          if (!restoreStartPaused) {
+            audioStarted = await attemptAudioPlay();
+            pendingAudioStart = !audioStarted;
+          }
+          const videoStart = audioStarted
+            ? Math.max(0, requestedStart + (Number.isFinite(audio.currentTime) ? audio.currentTime : 0))
+            : requestedStart;
+          setStreamFromTime(videoStart);
+        }
+        statusEl.textContent = 'Streaming...';
+        statusEl.style.display = 'block';
+        startSyncLoop(activeSessionId);
+        startBandwidthMonitorLoop(activeSessionId);
+        overlayPlayPauseBtn.disabled = false;
+        updatePlayPauseUi();
+        updateLiveStartAudioButton();
+        refreshSeekUi();
+        showPlayerControls();
+        savePlaybackState(true);
+      } catch (_) {
+        pendingAudioStart = false;
+        statusEl.textContent = 'Could not create playback session.';
+        syncInfo.textContent = 'Sync: failed';
+        overlayPlayPauseBtn.disabled = true;
+        updateLiveStartAudioButton();
+      }
+    });
+
+    stream.addEventListener('load', function () {
+      const frameNow = performance.now();
+      liveDebugLog('stream load frame', {
+        live: currentIsLiveStream,
+        frameCount: liveFrameLoadCount + (currentIsLiveStream ? 1 : 0),
+        pendingAudioStart,
+      });
+      if (currentIsLiveStream) {
+        liveFrameLoadCount += 1;
+        if (!liveFirstFrameLoadAtMs) {
+          liveFirstFrameLoadAtMs = frameNow;
+        }
+        liveLastFrameLoadAtMs = frameNow;
+      }
+      hasVideoFrame = true;
+      liveFirstFrameAtMs = frameNow;
+      clearLiveFirstFrameRetry();
+      liveFirstFrameRetries = 0;
+      statusEl.style.display = 'none';
+      stream.style.display = 'block';
+      if (freezeOnNextFrame) {
+        freezeOnNextFrame = false;
+        freezeCurrentVideoFrame();
+        return;
+      }
+      updateLiveStartAudioButton();
+      if (isPaused) {
+        return;
+      }
+      if (pendingAudioStart) {
+        if (currentIsLiveStream) {
+          maybeStartPendingLiveAudio().catch(function () {});
+        } else {
+          pendingAudioStart = false;
+          attemptAudioPlay();
+        }
+      }
+      refreshSeekUi();
+      savePlaybackState(false);
+    });
+
+    stream.addEventListener('error', function () {
+      liveDebugLog('stream error', {
+        suppressStreamError,
+        currentIsLiveStream,
+        hasVideoFrame,
+        activeSessionId,
+      });
+      if (suppressStreamError) {
+        suppressStreamError = false;
+        return;
+      }
+      if (currentIsLiveStream) {
+        if (!hasVideoFrame) {
+          syncInfo.textContent = 'Sync: first video frame failed, retrying...';
+          scheduleLiveFirstFrameRetry();
+        } else {
+          syncInfo.textContent = 'Sync: live video stalled';
+        }
+        return;
+      }
+      stream.style.display = 'none';
+      statusEl.style.display = 'block';
+      statusEl.textContent = 'Could not start stream. Check URL/server/codec support.';
+      pendingAudioStart = false;
+      clearSyncTimer();
+      audio.pause();
+      audio.playbackRate = 1.0;
+      liveMasterVideo.pause();
+      liveMasterVideo.playbackRate = 1.0;
+      syncInfo.textContent = 'Sync: stream error';
+      overlayPlayPauseBtn.disabled = true;
+      updatePlayPauseUi();
+      savePlaybackState(true);
+    });
+
+    audio.addEventListener('canplay', function () {
+      liveDebugLog('audio canplay', {
+        currentIsLiveStream,
+        pendingAudioStart,
+        readyState: audio.readyState,
+      });
+      if (currentIsLiveStream && !liveAudioReadyAtMs) {
+        liveAudioReadyAtMs = performance.now();
+      }
+      if (pendingAudioStart) {
+        if (currentIsLiveStream) {
+          maybeStartPendingLiveAudio().catch(function () {});
+          return;
+        }
+        pendingAudioStart = false;
+        attemptAudioPlay();
+      }
+    });
+
+    liveMasterVideo.addEventListener('canplay', function () {
+      if (!currentIsLiveStream) return;
+      liveDebugLog('liveMaster canplay', {
+        pendingAudioStart,
+        readyState: liveMasterVideo.readyState,
+      });
+      if (!liveAudioReadyAtMs) {
+        liveAudioReadyAtMs = performance.now();
+      }
+      if (pendingAudioStart) {
+        maybeStartPendingLiveAudio().catch(function () {});
+      }
+    });
+
+    audio.addEventListener('progress', function () {
+      if (!currentIsLiveStream || !pendingAudioStart) return;
+      maybeStartPendingLiveAudio().catch(function () {});
+    });
+
+    liveMasterVideo.addEventListener('progress', function () {
+      if (!currentIsLiveStream || !pendingAudioStart) return;
+      maybeStartPendingLiveAudio().catch(function () {});
+    });
+
+    audio.addEventListener('play', function () {
+      isPaused = false;
+      updatePlayPauseUi();
+      updateLiveStartAudioButton();
+      hidePlayerControlsSoon(1800);
+    });
+
+    liveMasterVideo.addEventListener('play', function () {
+      if (!currentIsLiveStream) return;
+      liveDebugLog('liveMaster play', {
+        currentTime: liveMasterVideo.currentTime,
+      });
+      isPaused = false;
+      updatePlayPauseUi();
+      updateLiveStartAudioButton();
+      hidePlayerControlsSoon(1800);
+    });
+
+    function handleLiveFirstPlaying(media) {
+      if (!currentIsLiveStream || !liveAwaitingFirstPlaying || liveStartupPlayDelayAdjusted) return;
+      const playDelay = liveAudioPlayIssuedAtMs ? Math.max(0, (performance.now() - liveAudioPlayIssuedAtMs) / 1000) : 0;
+      liveAwaitingFirstPlaying = false;
+      liveStartupPlayDelayAdjusted = true;
+      if (playDelay < LIVE_START_DELAY_SEEK_MIN) return;
+      const bufferedEnd = getBufferedEndSeconds();
+      if (!Number.isFinite(bufferedEnd)) return;
+      const latestSafe = Math.max(0, bufferedEnd - LIVE_STARTUP_BUFFER_SLACK);
+      const availableAdvance = latestSafe - media.currentTime;
+      if (availableAdvance <= 0.08) return;
+      const step = Math.max(0, Math.min(LIVE_START_DELAY_SEEK_MAX, playDelay, availableAdvance));
+      if (step <= 0.08) return;
+      try {
+        media.currentTime = Math.max(0, media.currentTime + step);
+        syncFilteredError = 0;
+        syncIntegralError = 0;
+        syncInfo.textContent = 'Sync: play-start catch-up +' + step.toFixed(2) + 's';
+      } catch (_) {}
+    }
+
+    audio.addEventListener('playing', function () {
+      handleLiveFirstPlaying(audio);
+    });
+
+    liveMasterVideo.addEventListener('playing', function () {
+      if (!currentIsLiveStream) return;
+      handleLiveFirstPlaying(liveMasterVideo);
+    });
+
+    audio.addEventListener('pause', function () {
+      if (pendingAudioStart) return;
+      isPaused = true;
+      updatePlayPauseUi();
+      updateLiveStartAudioButton();
+      showPlayerControls();
+    });
+
+    liveMasterVideo.addEventListener('pause', function () {
+      if (!currentIsLiveStream || pendingAudioStart) return;
+      isPaused = true;
+      updatePlayPauseUi();
+      updateLiveStartAudioButton();
+      showPlayerControls();
+    });
+
+    audio.addEventListener('ended', function () {
+      isPaused = true;
+      updatePlayPauseUi();
+      updateLiveStartAudioButton();
+      showPlayerControls();
+      savePlaybackState(true);
+    });
+
+    audio.addEventListener('error', function () {
+      liveDebugLog('audio error', {
+        currentIsLiveStream,
+        hasVideoFrame,
+        activeSessionId,
+      });
+      if (currentIsLiveStream) {
+        // Live audio is driven by hidden video timing media; ignore visible audio element errors.
+        return;
+      }
+      if (currentIsLiveStream && activeSessionId) {
+        if (!hasVideoFrame) {
+          syncInfo.textContent = 'Sync: waiting for video frame...';
+          return;
+        }
+        const now = Date.now();
+        const cooldownPassed = (now - lastLiveAudioReloadAtMs) >= LIVE_AUDIO_RELOAD_COOLDOWN_MS;
+        if (!isPaused && cooldownPassed) {
+          lastLiveAudioReloadAtMs = now;
+          pendingAudioStart = true;
+          liveAudioRequestedAtMs = performance.now();
+          liveAudioReadyAtMs = 0;
+          liveStartupSeekApplied = true;
+          liveStartupWaitUntilMs = performance.now();
+          liveAudioPlayIssuedAtMs = 0;
+          liveAwaitingFirstPlaying = false;
+          liveStartupPlayDelayAdjusted = false;
+          setAudioFromTime(0);
+          syncInfo.textContent = 'Sync: recovering live audio...';
+          return;
+        }
+        syncInfo.textContent = 'Sync: live audio hiccup';
+        return;
+      }
+      syncInfo.textContent = 'Sync: audio stream error';
+      overlayPlayPauseBtn.disabled = true;
+      updatePlayPauseUi();
+      updateLiveStartAudioButton();
+      savePlaybackState(true);
+    });
+
+    liveMasterVideo.addEventListener('error', function () {
+      if (!currentIsLiveStream) return;
+      liveDebugLog('liveMaster error', {
+        hasVideoFrame,
+        activeSessionId,
+      });
+      if (!activeSessionId) {
+        // Ignore stale errors during teardown/startup before session is active.
+        return;
+      }
+      if (activeSessionId) {
+        const now = Date.now();
+        const cooldownPassed = (now - lastLiveAudioReloadAtMs) >= LIVE_AUDIO_RELOAD_COOLDOWN_MS;
+        if (!isPaused && cooldownPassed) {
+          lastLiveAudioReloadAtMs = now;
+          pendingAudioStart = true;
+          liveAudioRequestedAtMs = performance.now();
+          liveAudioReadyAtMs = 0;
+          liveStartupSeekApplied = true;
+          liveStartupWaitUntilMs = performance.now();
+          liveAudioPlayIssuedAtMs = 0;
+          liveAwaitingFirstPlaying = false;
+          liveStartupPlayDelayAdjusted = false;
+          setAudioFromTime(0);
+          syncInfo.textContent = 'Sync: recovering live audio...';
+          return;
+        }
+        syncInfo.textContent = 'Sync: live audio hiccup';
+        return;
+      }
+      syncInfo.textContent = 'Sync: audio stream error';
+      overlayPlayPauseBtn.disabled = true;
+      updatePlayPauseUi();
+      updateLiveStartAudioButton();
+      savePlaybackState(true);
+    });
+
+    overlayPlayPauseBtn.addEventListener('click', function (event) {
+      event.stopPropagation();
+      if (isPaused) {
+        playBoth();
+        return;
+      }
+      pauseBoth();
+    });
+
+    screenOverlay.addEventListener('click', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!isPaused || !activeSessionId) return;
+      playBoth();
+    });
+
+    fullWidthBtn.addEventListener('click', function (event) {
+      event.stopPropagation();
+      toggleFullWidthMode();
+    });
+
+    playerControls.addEventListener('pointerdown', function (event) {
+      event.stopPropagation();
+    });
+
+    screen.addEventListener('mouseenter', showPlayerControls);
+    screen.addEventListener('mousemove', showPlayerControls);
+    screen.addEventListener('mouseleave', function () {
+      hidePlayerControlsSoon(900);
+    });
+    screen.addEventListener('pointerdown', function (event) {
+      if (event.pointerType === 'touch') {
+        showPlayerControls();
+      }
+    });
+
+    seekBar.addEventListener('pointerdown', function (event) {
+      event.stopPropagation();
+      isSeeking = true;
+      showPlayerControls();
+    });
+
+    seekBar.addEventListener('input', function () {
+      if (seekBar.disabled) return;
+      isSeeking = true;
+      const duration = Number.isFinite(audio.duration) ? audio.duration : NaN;
+      const effectiveDuration = (Number.isFinite(knownDurationSeconds) && knownDurationSeconds > 0)
+        ? knownDurationSeconds
+        : duration;
+      const next = Number(seekBar.value);
+      const shown = Number.isFinite(effectiveDuration) && effectiveDuration > 0 ? effectiveDuration : NaN;
+      timeLabel.textContent = formatClock(next) + ' / ' + formatClock(shown);
+      showPlayerControls();
+    });
+
+    seekBar.addEventListener('change', async function () {
+      if (seekBar.disabled || !activeSessionId) return;
+      const target = Math.max(0, Number(seekBar.value) || 0);
+      isSeeking = false;
+      const wasPaused = isPaused;
+      suppressStreamError = true;
+      lastVideoClock = 0;
+      hasVideoFrame = false;
+      mediaBaseTime = target;
+      // Force-close current MJPEG stream before reopening at the seek target.
+      stream.src = '';
+      setAudioFromTime(target);
+      if (wasPaused) {
+        if (!currentIsLiveStream) {
+          freezeOnNextFrame = true;
+          setStreamFromTime(target);
+        }
+        pausePositionSeconds = target;
+        audio.pause();
+      } else {
+        const audioStarted = await attemptAudioPlay();
+        if (!currentIsLiveStream) {
+          const videoStart = audioStarted
+            ? Math.max(0, target + (Number.isFinite(audio.currentTime) ? audio.currentTime : 0))
+            : target;
+          setStreamFromTime(videoStart);
+        } else {
+          setStreamFromTime(0);
+        }
+      }
+      refreshSeekUi();
+      showPlayerControls();
+      savePlaybackState(true);
+    });
+
+    seekBar.addEventListener('pointerup', function () {
+      isSeeking = false;
+    });
+
+    window.addEventListener('keydown', function (event) {
+      if (event.key.toLowerCase() !== 'f' || event.ctrlKey || event.metaKey || event.altKey) return;
+      const tag = (event.target && event.target.tagName) ? event.target.tagName.toLowerCase() : '';
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || (event.target && event.target.isContentEditable)) {
+        return;
+      }
+      event.preventDefault();
+      toggleFullWidthMode();
+    });
+
+    syncTargetInput.addEventListener('input', function () {
+      const next = getTargetOffsetSeconds();
+      const delta = next - previousSyncTarget;
+      previousSyncTarget = next;
+      renderOffsetValue();
+      manualOffsetEdited = true;
+      liveTunerActive = false;
+      if (Math.abs(delta) >= 0.01) {
+        manualNudgeDirection = Math.sign(delta);
+        manualNudgeUntilMs = Date.now() + 1400;
+      }
+    });
+
+    videoAheadBtn.addEventListener('click', function () {
+      nudgeSyncTarget(0.25);
+    });
+
+    audioAheadBtn.addEventListener('click', function () {
+      nudgeSyncTarget(-0.25);
+    });
+
+    fpsMatchInput.addEventListener('change', function () {
+      syncVideoSettingsInputs();
+      saveVideoSettings();
+    });
+
+    fpsInput.addEventListener('change', function () {
+      syncVideoSettingsInputs();
+      saveVideoSettings();
+    });
+
+    qualityInput.addEventListener('input', function () {
+      syncVideoSettingsInputs();
+      saveVideoSettings();
+    });
+
+    applyVideoSettingsBtn.addEventListener('click', function () {
+      applyCurrentVideoSettings();
+    });
+
+    videoSettingsToggleBtn.addEventListener('click', function () {
+      const collapsed = !videoSettingsPanel.classList.contains('collapsed');
+      setVideoSettingsCollapsed(collapsed);
+    });
+
+    audio.addEventListener('timeupdate', refreshSeekUi);
+    audio.addEventListener('timeupdate', function () {
+      savePlaybackState(false);
+    });
+    audio.addEventListener('loadedmetadata', refreshSeekUi);
+    audio.addEventListener('durationchange', refreshSeekUi);
+
+    plexSearch.addEventListener('input', function () {
+      const q = plexSearch.value.trim();
+      if (plexSearchTimer) {
+        clearTimeout(plexSearchTimer);
+        plexSearchTimer = null;
+      }
+      if (q.length < 2) {
+        hidePlexSuggestions();
+        hidePlexBrowser();
+        return;
+      }
+      plexSearchTimer = setTimeout(async function () {
+        try {
+          const res = await fetch('./plex/search?q=' + encodeURIComponent(q), { cache: 'no-store' });
+          if (!res.ok) return;
+          const data = await res.json();
+          hidePlexBrowser();
+          renderPlexSuggestions(data.results || []);
+        } catch (_) {}
+      }, 160);
+    });
+
+    document.addEventListener('click', function (event) {
+      if (event.target === plexSearch || plexSuggest.contains(event.target) || plexBrowser.contains(event.target)) return;
+      hidePlexSuggestions();
+      hidePlexBrowser();
+    });
+
+    setInterval(function () {
+      savePlaybackState(false);
+    }, 3000);
+
+    window.addEventListener('beforeunload', function () {
+      savePlaybackState(true);
+    });
+
+    restoreVideoSettings();
+    restoreVideoSettingsCollapsed();
+    syncVideoSettingsInputs();
+    renderBandwidthMonitor(null);
+    renderOffsetValue();
+    refreshSeekUi();
+    updatePlayPauseUi();
+    updateLiveStartAudioButton();
+    showPlayerControls();
+    const hadAddressBarUrl = applyAddressBarUrl();
+    if (!hadAddressBarUrl) {
+      restoreLastPlaybackFromStorage();
+    }
+  </script>
+</body>
+</html>

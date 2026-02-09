@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FFmpeg.wasm MJPEG Player (Frontend-Only)</title>
+  <style>
+    :root {
+      --bg: #0b0d11;
+      --panel: #161b24;
+      --line: #2c3340;
+      --text: #ebf1fa;
+      --muted: #9bacbf;
+      --accent: #61adff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(circle at top, #1a2436 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: start center;
+    }
+    .app {
+      width: min(980px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+    }
+    input, button {
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #0f141d;
+      color: var(--text);
+      padding: 11px 12px;
+      font: inherit;
+    }
+    input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(97, 173, 255, 0.22);
+    }
+    button {
+      background: #2f6091;
+      border-color: #3f79ae;
+      font-weight: 700;
+      cursor: pointer;
+      min-width: 120px;
+    }
+    .screen {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background: #000;
+      aspect-ratio: 16 / 9;
+      display: grid;
+      place-items: center;
+    }
+    #frame {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      background: #000;
+    }
+    audio {
+      width: 100%;
+      margin-top: 10px;
+    }
+    .status {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      min-height: 1.3em;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .hint {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+    .debug {
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0c1119;
+      padding: 8px;
+      color: #9ed0ff;
+      font-size: 0.78rem;
+      line-height: 1.35;
+      max-height: 180px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="row">
+      <input id="urlInput" type="url" value="https://blandfx.com/media/postpigs.mp4" placeholder="MP4 URL with CORS enabled">
+      <button id="startBtn" type="button">Transcode</button>
+    </div>
+
+    <section class="screen">
+      <img id="frame" alt="JPEG frame output">
+    </section>
+
+    <audio id="audio" controls preload="auto"></audio>
+    <p id="status" class="status">Idle.</p>
+    <pre id="debug" class="debug"></pre>
+    <p class="hint">Experimental. This downloads full media and transcodes in-browser. Heavy CPU/RAM usage expected.</p>
+  </main>
+
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+  <script>
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    const CORE_CANDIDATES = [
+      // Single-thread core first (works without SharedArrayBuffer).
+      'https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js',
+      'https://cdn.jsdelivr.net/npm/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js',
+      // Fallback to default core (requires SharedArrayBuffer / COOP+COEP).
+      'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+      'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
+    ];
+    let ffmpeg = null;
+    let selectedCorePath = '';
+
+    const urlInput = document.getElementById('urlInput');
+    const startBtn = document.getElementById('startBtn');
+    const audio = document.getElementById('audio');
+    const frame = document.getElementById('frame');
+    const statusEl = document.getElementById('status');
+    const debugEl = document.getElementById('debug');
+
+    const FPS = 15;
+    let frameUrls = [];
+    let audioUrl = '';
+    let raf = 0;
+    let transcoding = false;
+    const logs = [];
+
+    function dbg(msg) {
+      const line = '[' + new Date().toISOString().slice(11, 23) + '] ' + msg;
+      logs.push(line);
+      if (logs.length > 140) logs.shift();
+      debugEl.textContent = logs.join('\n');
+      debugEl.scrollTop = debugEl.scrollHeight;
+      console.log('[ffmpeg-wasm]', msg);
+    }
+
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+      dbg(msg);
+    }
+
+    function cleanupUrls() {
+      for (const u of frameUrls) URL.revokeObjectURL(u);
+      frameUrls = [];
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      audioUrl = '';
+    }
+
+    function stopRenderLoop() {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+    }
+
+    function renderLoop() {
+      if (!frameUrls.length) return;
+      const t = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+      const idx = Math.max(0, Math.min(frameUrls.length - 1, Math.floor(t * FPS)));
+      const next = frameUrls[idx];
+      if (frame.src !== next) frame.src = next;
+      raf = requestAnimationFrame(renderLoop);
+    }
+
+    async function ensureLoaded() {
+      if (ffmpeg && ffmpeg.isLoaded()) return;
+      let lastErr = null;
+      for (const corePath of CORE_CANDIDATES) {
+        try {
+          ffmpeg = createFFmpeg({ log: true, corePath, mainName: 'main' });
+          selectedCorePath = corePath;
+          setStatus('Loading ffmpeg.wasm core...');
+          await ffmpeg.load();
+          dbg('Loaded core: ' + corePath);
+          return;
+        } catch (err) {
+          lastErr = err;
+          dbg('Core load failed: ' + corePath + ' :: ' + String(err && err.message ? err.message : err));
+        }
+      }
+      throw lastErr || new Error('Could not load any ffmpeg core.');
+    }
+
+    async function transcode(url) {
+      if (transcoding) return;
+      transcoding = true;
+      startBtn.disabled = true;
+      stopRenderLoop();
+      audio.pause();
+      frame.removeAttribute('src');
+      cleanupUrls();
+
+      try {
+        await ensureLoaded();
+        if (typeof SharedArrayBuffer === 'undefined') {
+          dbg('SharedArrayBuffer unavailable; using fallback core path=' + selectedCorePath);
+        }
+        setStatus('Fetching source media...');
+        const inputData = await fetchFile(url);
+
+        // Clear previous files in MEMFS root.
+        try {
+          const files = ffmpeg.FS('readdir', '/');
+          for (const f of files) {
+            if (f === '.' || f === '..') continue;
+            try { ffmpeg.FS('unlink', '/' + f); } catch (_) {}
+          }
+        } catch (_) {}
+
+        ffmpeg.FS('writeFile', 'input.mp4', inputData);
+
+        setStatus('Transcoding video frames (JPEG)...');
+        await ffmpeg.run(
+          '-i', 'input.mp4',
+          '-vf', 'fps=' + FPS + ',scale=960:-1:flags=lanczos',
+          '-q:v', '8',
+          'frame_%06d.jpg'
+        );
+
+        setStatus('Transcoding audio (MP3)...');
+        await ffmpeg.run(
+          '-i', 'input.mp4',
+          '-vn',
+          '-c:a', 'libmp3lame',
+          '-b:a', '128k',
+          '-ar', '48000',
+          '-ac', '2',
+          'audio.mp3'
+        );
+
+        const files = ffmpeg.FS('readdir', '/')
+          .filter((n) => /^frame_\d+\.jpg$/.test(n))
+          .sort();
+        if (!files.length) throw new Error('No JPEG frames produced.');
+
+        setStatus('Loading ' + files.length + ' frames...');
+        frameUrls = files.map((name) => {
+          const data = ffmpeg.FS('readFile', name);
+          const blob = new Blob([data.buffer], { type: 'image/jpeg' });
+          return URL.createObjectURL(blob);
+        });
+
+        const aud = ffmpeg.FS('readFile', 'audio.mp3');
+        audioUrl = URL.createObjectURL(new Blob([aud.buffer], { type: 'audio/mpeg' }));
+        audio.src = audioUrl;
+
+        setStatus('Ready. Press Play.');
+        renderLoop();
+        try { await audio.play(); } catch (_) {}
+      } catch (err) {
+        setStatus('Failed: ' + String(err && err.message ? err.message : err));
+      } finally {
+        startBtn.disabled = false;
+        transcoding = false;
+      }
+    }
+
+    startBtn.addEventListener('click', () => {
+      const url = urlInput.value.trim();
+      if (!url) return;
+      transcode(url);
+    });
+
+    audio.addEventListener('play', () => {
+      if (!raf) renderLoop();
+    });
+    audio.addEventListener('pause', () => {
+      // Keep last frame visible.
+    });
+    audio.addEventListener('seeked', () => {
+      if (!raf) renderLoop();
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    const u = params.get('url') || params.get('stream');
+    if (u) urlInput.value = u;
+  </script>
+</body>
+</html>
