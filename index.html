@@ -21,6 +21,7 @@
       margin: 0;
       min-height: 100vh;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      font-size: 17px;
       background: radial-gradient(circle at top, #1a2030 0%, var(--bg) 55%);
       color: var(--text);
       display: grid;
@@ -54,7 +55,7 @@
 
     form {
       display: grid;
-      grid-template-columns: 1fr auto;
+      grid-template-columns: 1fr auto auto;
       gap: 10px;
       margin-bottom: 14px;
     }
@@ -241,6 +242,225 @@
       min-width: 170px;
     }
 
+    .status-row {
+      margin-top: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .status-chip {
+      color: #d6e6ff;
+      border: 1px solid #32445e;
+      border-radius: 8px;
+      background: #121c2a;
+      padding: 8px 10px;
+      font-size: 0.82rem;
+      line-height: 1.2;
+      max-width: 48%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .channels-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(6, 9, 14, 0.72);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      padding: 14px;
+    }
+
+    .channels-modal.show {
+      display: flex;
+    }
+
+    .channels-panel {
+      width: min(820px, 100%);
+      max-height: 85vh;
+      background: #101620;
+      border: 1px solid #2e3745;
+      border-radius: 12px;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .channels-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid #2e3745;
+    }
+
+    .channels-head h3 {
+      margin: 0;
+      font-size: 0.96rem;
+      color: #deebff;
+    }
+
+    .channels-search {
+      padding: 10px 12px;
+      border-bottom: 1px solid #2e3745;
+    }
+
+    #channelsSearch {
+      width: 100%;
+      padding: 10px;
+    }
+
+    #channelsList {
+      overflow: auto;
+      padding: 8px;
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fill, minmax(100px, 100px));
+      justify-content: start;
+    }
+
+    .channel-item {
+      width: 100px;
+      height: 100px;
+      border: 1px solid #334258;
+      background: #132033;
+      border-radius: 8px;
+      padding: 8px;
+      text-align: center;
+      color: #edf0f4;
+      cursor: pointer;
+      display: grid;
+      align-items: center;
+      justify-items: center;
+    }
+
+    .channel-item:hover {
+      border-color: #67adff;
+      background: #1a2f49;
+    }
+
+    .channel-logo {
+      width: 84px;
+      height: 84px;
+      object-fit: contain;
+      display: block;
+    }
+
+    .channel-logo-fallback {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      font-size: 0.9rem;
+      color: #9ea6b2;
+      border: 1px dashed #3b4b63;
+      border-radius: 6px;
+      padding: 6px;
+    }
+
+    #bandwidthMonitor {
+      text-align: right;
+      margin-left: auto;
+    }
+
+    #syncInfo {
+      margin: 0;
+    }
+
+    .plex-history {
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #101722;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .plex-history-title {
+      margin: 0;
+      font-size: 0.95rem;
+      color: #deebff;
+      letter-spacing: 0.01em;
+    }
+
+    .plex-history-list {
+      display: grid;
+      gap: 6px;
+      max-height: 240px;
+      overflow: auto;
+    }
+
+    .plex-history-item {
+      width: 100%;
+      text-align: left;
+      border: 1px solid #334258;
+      background: #132033;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      cursor: pointer;
+    }
+
+    .plex-history-item:hover {
+      border-color: #67adff;
+      background: #1a2f49;
+    }
+
+    .plex-history-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .plex-history-main {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+      flex: 1 1 auto;
+    }
+
+    .plex-history-meta {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .plex-history-remove {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      border: 1px solid #5c6a82;
+      background: #1c2a3d;
+      color: #f3f7ff;
+      font-size: 1.35rem;
+      font-weight: 800;
+      line-height: 1;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      flex: 0 0 auto;
+      touch-action: manipulation;
+    }
+
+    .plex-history-remove:hover {
+      border-color: #ff8a8a;
+      background: #472832;
+    }
+
+    .plex-history-empty {
+      color: var(--muted);
+      font-size: 0.85rem;
+      padding: 4px 0;
+    }
+
     .video-settings.collapsed .video-settings-grid,
     .video-settings.collapsed .video-settings-actions {
       display: none;
@@ -305,7 +525,7 @@
       background: #0d1118;
       border: 1px solid var(--line);
       border-radius: 8px;
-      max-height: 260px;
+      max-height: 520px;
       overflow-y: auto;
       z-index: 50;
       display: none;
@@ -319,7 +539,10 @@
       border-radius: 0;
       background: transparent;
       color: var(--text);
-      padding: 10px 12px;
+      padding: 18px 16px;
+      min-height: 72px;
+      font-size: 1.12rem;
+      line-height: 1.2;
       cursor: pointer;
     }
 
@@ -329,7 +552,8 @@
 
     .plex-item small {
       color: var(--muted);
-      margin-left: 8px;
+      margin-left: 10px;
+      font-size: 0.98rem;
     }
 
     #plexBrowser {
@@ -337,7 +561,7 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #0d1118;
-      max-height: 260px;
+      max-height: 520px;
       overflow-y: auto;
       display: none;
     }
@@ -521,21 +745,13 @@
       100% { opacity: 0; }
     }
 
-    .hint {
-      margin: 10px 0 0;
-      color: var(--muted);
-      font-size: 0.9rem;
-    }
-
     #audio {
       display: none;
     }
 
     body.full-width .plex,
     body.full-width #playerForm,
-    body.full-width .video-settings,
-    body.full-width .controls,
-    body.full-width .hint {
+    body.full-width .video-settings {
       display: none;
     }
 
@@ -556,6 +772,7 @@
 
     <form id="playerForm">
       <input id="urlInput" type="url" placeholder="Paste MP4/MOV/WebM URL" value="https://blandfx.com/proxy/ts/stream/d7c78acb-fb75-4d24-a183-f15a2bcaa691" required>
+      <button id="channelsBtn" type="button">Channels</button>
       <button type="submit">Play</button>
     </form>
     <p id="urlSource" class="url-source">Loaded from address bar URL parameter.</p>
@@ -592,7 +809,6 @@
         </div>
       </div>
       <div class="video-settings-actions">
-        <div id="bandwidthMonitor" class="bandwidth-monitor">Bandwidth: --</div>
         <button id="applyVideoSettingsBtn" type="button">Apply Video Settings</button>
       </div>
     </section>
@@ -613,27 +829,42 @@
 
     <audio id="audio" preload="auto"></audio>
     <video id="liveMasterVideo" playsinline preload="auto" style="display:none"></video>
-
-    <section class="controls">
-      <input id="syncTarget" type="number" step="0.05" value="0" hidden>
-      <div class="offset-nudges">
-        <button id="videoAheadBtn" class="offset-btn" type="button">Video Ahead of Audio (+0.25s)</button>
-        <div id="offsetValue" class="offset-value">0.00s</div>
-        <button id="audioAheadBtn" class="offset-btn" type="button">Audio Ahead of Video (-0.25s)</button>
-      </div>
+    <section class="status-row">
+      <p id="syncInfo" class="status-chip">Sync: idle</p>
+      <div id="bandwidthMonitor" class="status-chip">Bandwidth: --</div>
     </section>
-
-    <p class="hint">Playback is rendered through an &lt;img&gt; only. The server transcodes video into MJPEG.</p>
-    <p id="syncInfo" class="hint">Sync: idle</p>
+    <section class="plex-history">
+      <h3 class="plex-history-title">Plex History</h3>
+      <div id="plexHistoryList" class="plex-history-list"></div>
+    </section>
   </main>
+
+  <div id="channelsModal" class="channels-modal" role="dialog" aria-modal="true" aria-labelledby="channelsTitle">
+    <div class="channels-panel">
+      <div class="channels-head">
+        <h3 id="channelsTitle">Channel Picker</h3>
+        <button id="channelsCloseBtn" type="button">Close</button>
+      </div>
+      <div class="channels-search">
+        <input id="channelsSearch" type="text" placeholder="Filter channels...">
+      </div>
+      <div id="channelsList"></div>
+    </div>
+  </div>
 
   <script>
     const form = document.getElementById('playerForm');
     const input = document.getElementById('urlInput');
+    const channelsBtn = document.getElementById('channelsBtn');
+    const channelsModal = document.getElementById('channelsModal');
+    const channelsCloseBtn = document.getElementById('channelsCloseBtn');
+    const channelsSearch = document.getElementById('channelsSearch');
+    const channelsList = document.getElementById('channelsList');
     const urlSource = document.getElementById('urlSource');
     const plexSearch = document.getElementById('plexSearch');
     const plexSuggest = document.getElementById('plexSuggest');
     const plexBrowser = document.getElementById('plexBrowser');
+    const plexHistoryList = document.getElementById('plexHistoryList');
     const screen = document.getElementById('screen');
     const stream = document.getElementById('stream');
     const screenOverlay = document.getElementById('screenOverlay');
@@ -655,10 +886,6 @@
     const qualityValue = document.getElementById('qualityValue');
     const applyVideoSettingsBtn = document.getElementById('applyVideoSettingsBtn');
     const bandwidthMonitor = document.getElementById('bandwidthMonitor');
-    const syncTargetInput = document.getElementById('syncTarget');
-    const offsetValue = document.getElementById('offsetValue');
-    const videoAheadBtn = document.getElementById('videoAheadBtn');
-    const audioAheadBtn = document.getElementById('audioAheadBtn');
     let pendingAudioStart = false;
     let liveAudioRequestedAtMs = 0;
     let liveAudioReadyAtMs = 0;
@@ -774,12 +1001,33 @@
     const VIDEO_SETTINGS_STORAGE_KEY = 'splay:videoSettings:v1';
     const VIDEO_SETTINGS_COLLAPSED_STORAGE_KEY = 'splay:videoSettingsCollapsed:v1';
     let plexSearchTimer = null;
+    let plexSearchRequestSeq = 0;
     let bandwidthTimer = null;
     let liveDebugLastGateLogMs = 0;
     let liveDebugLastGateReason = '';
     let currentMediaUrl = '';
     let currentSessionMode = 'direct';
     let restoreResumeState = null;
+    let channelsCatalog = [];
+    let autoRestoreSubmitPending = false;
+    let currentPlexMeta = null;
+    let lastMediaTapAtMs = 0;
+    let lastMediaTapX = 0;
+    let lastMediaTapY = 0;
+    const PLEX_HISTORY_MAX_ITEMS = 80;
+    const PLEX_HISTORY_UPSERT_MIN_INTERVAL_MS = 2500;
+    const PLEX_SYNC_PUSH_INTERVAL_MS = 10000;
+    const PLEX_SYNC_PULL_INTERVAL_MS = 300000;
+    let plexHistoryCache = [];
+    let plexHistoryLoaded = false;
+    let plexHistoryLoadInFlight = null;
+    let plexHistoryUpsertInFlight = false;
+    let plexHistoryPendingItem = null;
+    let plexHistoryLastUpsertAtMs = 0;
+    let plexSyncPushInFlight = false;
+    let plexSyncLastPushAtMs = 0;
+    let plexSyncPendingPayload = null;
+    let plexSyncLastPullAtMs = 0;
 
     function getLiveTimingMedia() {
       if (currentIsLiveStream) return liveMasterVideo;
@@ -940,7 +1188,25 @@
       return Math.max(0, mediaBaseTime + rel);
     }
 
-    function savePlaybackState(force) {
+    function parsePartIdFromUrl(url) {
+      const value = String(url || '');
+      const match = value.match(/\/library\/parts\/(\d+)/);
+      return match ? match[1] : '';
+    }
+
+    function buildPlexSyncState(eventName) {
+      const ev = String(eventName || '').toLowerCase();
+      if (ev === 'pause') return 'paused';
+      if (ev === 'stop' || ev === 'ended') return 'stopped';
+      return 'playing';
+    }
+
+    function shouldMarkWatched(position, duration) {
+      if (!Number.isFinite(position) || !Number.isFinite(duration) || duration <= 0) return false;
+      return (position / duration) >= 0.9;
+    }
+
+    function savePlaybackState(force, syncEvent) {
       try {
         const url = String(currentMediaUrl || input.value || '').trim();
         if (!url) return;
@@ -953,6 +1219,11 @@
         };
         if (!force && !activeSessionId && payload.is_live) return;
         localStorage.setItem(LAST_PLAYBACK_STORAGE_KEY, JSON.stringify(payload));
+        if (!payload.is_live) {
+          upsertCurrentPlexHistory(force);
+          const eventName = String(syncEvent || (force ? 'checkpoint' : 'tick'));
+          queuePlexSyncPush(eventName, !!force);
+        }
       } catch (_) {}
     }
 
@@ -979,6 +1250,7 @@
           knownDurationSeconds = restoreResumeState.knownDuration;
         }
         setTimeout(function () {
+          autoRestoreSubmitPending = true;
           form.requestSubmit();
         }, 0);
         return true;
@@ -1168,6 +1440,395 @@
       plexBrowser.innerHTML = '';
     }
 
+    function closeChannelsModal() {
+      channelsModal.classList.remove('show');
+    }
+
+    function sanitizePlexHistoryItem(item) {
+      if (!item || typeof item !== 'object') return null;
+      const url = String(item.url || '').trim();
+      const title = String(item.title || '').trim();
+      if (!url || !title) return null;
+      const position = Number(item.position);
+      const knownDuration = Number(item.known_duration);
+      const contentId = String(item.content_id || '').trim();
+      const partId = String(item.part_id || '').trim() || parsePartIdFromUrl(url);
+      const plexUpdatedAt = Number(item.plex_updated_at);
+      const source = String(item.source || '').trim().toLowerCase();
+      return {
+        url: url,
+        title: title,
+        type: String(item.type || 'item'),
+        position: Number.isFinite(position) && position >= 0 ? position : 0,
+        known_duration: Number.isFinite(knownDuration) && knownDuration > 0 ? knownDuration : null,
+        updated_at: Number(item.updated_at) || Date.now(),
+        plex_updated_at: Number.isFinite(plexUpdatedAt) && plexUpdatedAt > 0 ? Math.trunc(plexUpdatedAt) : null,
+        content_id: contentId,
+        part_id: partId,
+        source: source || null,
+      };
+    }
+
+    function normalizePlexHistoryList(list) {
+      if (!Array.isArray(list)) return [];
+      const out = [];
+      for (const item of list) {
+        const normalized = sanitizePlexHistoryItem(item);
+        if (!normalized) continue;
+        // Only show items that were viewed in Splay (splay/merged/legacy).
+        if (normalized.source === 'plex') continue;
+        out.push(normalized);
+      }
+      out.sort(function (a, b) {
+        return (Number(b.updated_at) || 0) - (Number(a.updated_at) || 0);
+      });
+      return out.slice(0, PLEX_HISTORY_MAX_ITEMS);
+    }
+
+    function applyPlexHistoryCache(nextList) {
+      plexHistoryCache = normalizePlexHistoryList(nextList);
+      renderPlexHistory();
+    }
+
+    function renderPlexHistory() {
+      const items = normalizePlexHistoryList(plexHistoryCache);
+      plexHistoryList.innerHTML = '';
+      if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'plex-history-empty';
+        empty.textContent = 'No Plex history yet.';
+        plexHistoryList.appendChild(empty);
+        return;
+      }
+      for (const item of items) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'plex-history-item';
+
+        const main = document.createElement('div');
+        main.className = 'plex-history-main';
+        const name = document.createElement('div');
+        name.className = 'plex-history-name';
+        name.textContent = item.title;
+        main.appendChild(name);
+
+        const meta = document.createElement('div');
+        meta.className = 'plex-history-meta';
+        const pos = Number(item.position);
+        const dur = Number(item.known_duration);
+        const posText = Number.isFinite(pos) && pos >= 0 ? formatClock(pos) : '--:--';
+        const durText = Number.isFinite(dur) && dur > 0 ? formatClock(dur) : '--:--';
+        const typeText = item.type ? String(item.type) : 'item';
+        meta.textContent = typeText + ' • ' + posText + ' / ' + durText;
+        main.appendChild(meta);
+        btn.appendChild(main);
+
+        const removeBtn = document.createElement('div');
+        removeBtn.className = 'plex-history-remove';
+        removeBtn.textContent = '×';
+        removeBtn.title = 'Remove';
+        removeBtn.setAttribute('aria-label', 'Remove from Plex history');
+        removeBtn.setAttribute('role', 'button');
+        removeBtn.tabIndex = 0;
+        removeBtn.addEventListener('click', function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          void deletePlexHistoryItem(item.url);
+        });
+        removeBtn.addEventListener('keydown', function (event) {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          event.stopPropagation();
+          void deletePlexHistoryItem(item.url);
+        });
+        btn.appendChild(removeBtn);
+
+        btn.addEventListener('click', function () {
+          currentPlexMeta = {
+            url: item.url,
+            title: item.title,
+            type: item.type || 'item',
+            content_id: item.content_id || '',
+            part_id: item.part_id || parsePartIdFromUrl(item.url),
+          };
+          restoreResumeState = {
+            url: item.url,
+            position: Number.isFinite(pos) && pos > 0 ? pos : 0,
+            knownDuration: Number.isFinite(dur) && dur > 0 ? dur : NaN,
+            paused: false,
+          };
+          plexSearch.value = item.title;
+          input.value = item.url;
+          form.requestSubmit();
+        });
+        plexHistoryList.appendChild(btn);
+      }
+    }
+
+    async function loadPlexHistory() {
+      if (plexHistoryLoadInFlight) return plexHistoryLoadInFlight;
+      plexHistoryLoadInFlight = (async function () {
+        try {
+          const res = await fetch('./history/plex?t=' + Date.now(), { cache: 'no-store' });
+          if (res.ok) {
+            const data = await res.json();
+            applyPlexHistoryCache(data.results || []);
+            plexHistoryLoaded = true;
+            return;
+          }
+        } catch (_) {}
+        if (!plexHistoryLoaded) {
+          applyPlexHistoryCache([]);
+        }
+      })();
+      try {
+        await plexHistoryLoadInFlight;
+      } finally {
+        plexHistoryLoadInFlight = null;
+      }
+    }
+
+    async function syncPlexHistoryPull(force) {
+      const now = Date.now();
+      if (!force && (now - plexSyncLastPullAtMs) < PLEX_SYNC_PULL_INTERVAL_MS) return;
+      try {
+        const res = await fetch('./history/plex/sync/pull', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        plexSyncLastPullAtMs = Date.now();
+        await loadPlexHistory();
+      } catch (_) {}
+    }
+
+    async function flushPlexHistoryUpsert(force) {
+      if (plexHistoryUpsertInFlight || !plexHistoryPendingItem) return;
+      const now = Date.now();
+      if (!force && (now - plexHistoryLastUpsertAtMs) < PLEX_HISTORY_UPSERT_MIN_INTERVAL_MS) return;
+      const nextItem = plexHistoryPendingItem;
+      plexHistoryPendingItem = null;
+      plexHistoryUpsertInFlight = true;
+      try {
+        const res = await fetch('./history/plex/upsert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(nextItem),
+        });
+        if (res.ok) {
+          plexHistoryLastUpsertAtMs = Date.now();
+          const data = await res.json();
+          if (data && data.item) {
+            const updated = sanitizePlexHistoryItem(data.item);
+            if (updated) {
+              const idx = plexHistoryCache.findIndex(function (item) { return item.url === updated.url; });
+              if (idx >= 0) {
+                plexHistoryCache[idx] = { ...plexHistoryCache[idx], ...updated };
+              } else {
+                plexHistoryCache.unshift(updated);
+              }
+              applyPlexHistoryCache(plexHistoryCache);
+            }
+          }
+        } else {
+          plexHistoryPendingItem = nextItem;
+        }
+      } catch (_) {
+        plexHistoryPendingItem = nextItem;
+      } finally {
+        plexHistoryUpsertInFlight = false;
+      }
+      if (plexHistoryPendingItem) {
+        setTimeout(function () { flushPlexHistoryUpsert(false); }, 900);
+      }
+    }
+
+    function buildCurrentPlexSyncPayload(eventName) {
+      if (currentIsLiveStream) return null;
+      if (!currentPlexMeta || !currentPlexMeta.url || !currentPlexMeta.title) return null;
+      const activeUrl = String(currentMediaUrl || input.value || '').trim();
+      if (!activeUrl || activeUrl !== currentPlexMeta.url) return null;
+      const contentId = String(currentPlexMeta.content_id || '').trim();
+      const partId = String(currentPlexMeta.part_id || '').trim() || parsePartIdFromUrl(currentPlexMeta.url);
+      if (!contentId && !partId) return null;
+      const position = getAbsolutePlaybackTime();
+      const duration = Number.isFinite(knownDurationSeconds) && knownDurationSeconds > 0 ? knownDurationSeconds : NaN;
+      const payload = {
+        content_id: contentId,
+        part_id: partId,
+        url: currentPlexMeta.url,
+        title: currentPlexMeta.title,
+        type: currentPlexMeta.type || 'item',
+        position: Number.isFinite(position) && position > 0 ? position : 0,
+        known_duration: Number.isFinite(duration) && duration > 0 ? duration : null,
+        state: buildPlexSyncState(eventName),
+        event: String(eventName || ''),
+        mark_watched: shouldMarkWatched(position, duration),
+        updated_at: Date.now(),
+      };
+      return payload;
+    }
+
+    async function flushPlexSyncPush(force) {
+      if (plexSyncPushInFlight || !plexSyncPendingPayload) return;
+      const now = Date.now();
+      if (!force && (now - plexSyncLastPushAtMs) < PLEX_SYNC_PUSH_INTERVAL_MS) return;
+      const payload = plexSyncPendingPayload;
+      plexSyncPendingPayload = null;
+      plexSyncPushInFlight = true;
+      try {
+        const res = await fetch('./history/plex/sync/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          plexSyncLastPushAtMs = Date.now();
+        } else {
+          plexSyncPendingPayload = payload;
+        }
+      } catch (_) {
+        plexSyncPendingPayload = payload;
+      } finally {
+        plexSyncPushInFlight = false;
+      }
+      if (plexSyncPendingPayload) {
+        setTimeout(function () { flushPlexSyncPush(false); }, 1200);
+      }
+    }
+
+    function queuePlexSyncPush(eventName, force) {
+      const payload = buildCurrentPlexSyncPayload(eventName);
+      if (!payload) return;
+      plexSyncPendingPayload = payload;
+      void flushPlexSyncPush(!!force);
+    }
+
+    async function deletePlexHistoryItem(url) {
+      const target = String(url || '').trim();
+      if (!target) return;
+      const previous = plexHistoryCache.slice();
+      applyPlexHistoryCache(previous.filter(function (item) { return item.url !== target; }));
+      try {
+        const res = await fetch('./history/plex/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: target }),
+        });
+        if (!res.ok) applyPlexHistoryCache(previous);
+      } catch (_) {
+        applyPlexHistoryCache(previous);
+      }
+    }
+
+    function upsertCurrentPlexHistory(force) {
+      if (currentIsLiveStream) return;
+      if (!currentPlexMeta || !currentPlexMeta.url || !currentPlexMeta.title) return;
+      const activeUrl = String(currentMediaUrl || input.value || '').trim();
+      if (!activeUrl || activeUrl !== currentPlexMeta.url) return;
+      const position = getAbsolutePlaybackTime();
+      const nextEntry = {
+        url: currentPlexMeta.url,
+        title: currentPlexMeta.title,
+        type: currentPlexMeta.type || 'item',
+        position: Number.isFinite(position) && position > 0 ? position : 0,
+        known_duration: Number.isFinite(knownDurationSeconds) && knownDurationSeconds > 0 ? knownDurationSeconds : null,
+        updated_at: Date.now(),
+        content_id: String(currentPlexMeta.content_id || ''),
+        part_id: String(currentPlexMeta.part_id || parsePartIdFromUrl(currentPlexMeta.url)),
+        source: 'splay',
+      };
+      const list = normalizePlexHistoryList(plexHistoryCache);
+      const idx = list.findIndex(function (item) { return item.url === nextEntry.url; });
+      if (idx >= 0) {
+        list[idx] = { ...list[idx], ...nextEntry };
+      } else {
+        list.unshift(nextEntry);
+      }
+      applyPlexHistoryCache(list);
+      plexHistoryPendingItem = nextEntry;
+      void flushPlexHistoryUpsert(!!force);
+    }
+
+    function renderChannelsList(items) {
+      channelsList.innerHTML = '';
+      if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'plex-history-empty';
+        empty.textContent = 'No channels found.';
+        channelsList.appendChild(empty);
+        return;
+      }
+      for (const channel of items) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'channel-item';
+        const title = channel.name || channel.group || channel.url;
+        btn.title = title;
+        btn.setAttribute('aria-label', title);
+
+        if (channel.logo) {
+          const logo = document.createElement('img');
+          logo.className = 'channel-logo';
+          logo.loading = 'lazy';
+          logo.decoding = 'async';
+          logo.referrerPolicy = 'no-referrer';
+          logo.alt = title;
+          logo.src = channel.logo;
+          logo.onerror = function () {
+            logo.replaceWith(buildChannelFallback(title));
+          };
+          btn.appendChild(logo);
+        } else {
+          btn.appendChild(buildChannelFallback(title));
+        }
+
+        btn.addEventListener('click', function () {
+          input.value = channel.url;
+          closeChannelsModal();
+          form.requestSubmit();
+        });
+        channelsList.appendChild(btn);
+      }
+    }
+
+    function buildChannelFallback(title) {
+      const fallback = document.createElement('div');
+      fallback.className = 'channel-logo-fallback';
+      fallback.textContent = title;
+      return fallback;
+    }
+
+    function filterChannels(query) {
+      const q = String(query || '').trim().toLowerCase();
+      if (!q) return channelsCatalog.slice();
+      return channelsCatalog.filter(function (item) {
+        return String(item.name || '').toLowerCase().includes(q)
+          || String(item.group || '').toLowerCase().includes(q)
+          || String(item.url || '').toLowerCase().includes(q);
+      });
+    }
+
+    async function openChannelsModal() {
+      channelsModal.classList.add('show');
+      channelsList.innerHTML = '<div class="channel-meta">Loading channels...</div>';
+      try {
+        const res = await fetch('./channels/list', { cache: 'no-store' });
+        if (!res.ok) throw new Error('channels fetch failed');
+        const data = await res.json();
+        channelsCatalog = Array.isArray(data.results) ? data.results : [];
+        renderChannelsList(filterChannels(channelsSearch.value));
+      } catch (_) {
+        channelsList.innerHTML = '<div class="plex-history-empty">Could not load remote M3U channels source</div>';
+      }
+      setTimeout(function () {
+        channelsSearch.focus();
+        channelsSearch.select();
+      }, 0);
+    }
+
     function clearOverlayTimer() {
       if (overlayFadeTimer) {
         clearTimeout(overlayFadeTimer);
@@ -1200,9 +1861,7 @@
       }, Number.isFinite(delayMs) ? delayMs : 1400);
     }
 
-    function renderOffsetValue() {
-      offsetValue.textContent = getTargetOffsetSeconds().toFixed(2) + 's';
-    }
+    function renderOffsetValue() {}
 
     function updatePlayPauseUi() {
       overlayPlayPauseBtn.textContent = isPaused ? 'Play' : 'Pause';
@@ -1284,6 +1943,21 @@
         if (!res.ok) throw new Error('plex load failed');
         const data = await res.json();
         if (!data.url) throw new Error('missing media url');
+        currentPlexMeta = {
+          url: data.url,
+          title: String(data.title || item.title || 'Plex Item'),
+          type: String(item.type || 'item'),
+          content_id: String(data.content_id || item.content_id || ''),
+          part_id: String(data.part_id || parsePartIdFromUrl(data.url)),
+        };
+        const plexStart = Number(data.start_position);
+        const plexDuration = Number(data.known_duration);
+        restoreResumeState = {
+          url: data.url,
+          position: Number.isFinite(plexStart) && plexStart > 0 ? plexStart : 0,
+          knownDuration: Number.isFinite(plexDuration) && plexDuration > 0 ? plexDuration : NaN,
+          paused: false,
+        };
         input.value = data.url;
         if (data.title) {
           plexSearch.value = data.title;
@@ -1388,7 +2062,14 @@
         const titleNode = document.createElement('span');
         titleNode.textContent = String(item.title || '');
         const typeNode = document.createElement('small');
-        typeNode.textContent = '(' + String(item.type || '') + ')';
+        const itemType = String(item.type || '');
+        const itemTypeLower = itemType.toLowerCase();
+        const rawYear = Number(item.year);
+        const hasYear = Number.isFinite(rawYear) && rawYear >= 1800 && rawYear <= 3000;
+        const showYear = hasYear && (itemTypeLower === 'movie' || itemTypeLower === 'series');
+        typeNode.textContent = showYear
+          ? '(' + itemType + ' • ' + String(Math.trunc(rawYear)) + ')'
+          : '(' + itemType + ')';
         btn.appendChild(titleNode);
         btn.appendChild(typeNode);
         btn.addEventListener('click', function () {
@@ -1404,16 +2085,12 @@
     }
 
     function getTargetOffsetSeconds() {
-      const value = Number(syncTargetInput.value);
-      return Number.isFinite(value) ? value : 0;
+      return 0;
     }
 
     function nudgeSyncTarget(delta) {
-      const current = getTargetOffsetSeconds();
-      const next = Math.round((current + delta) * 100) / 100;
-      syncTargetInput.value = next.toFixed(2);
-      renderOffsetValue();
-      previousSyncTarget = next;
+      const next = Math.round((getTargetOffsetSeconds() + delta) * 100) / 100;
+      previousSyncTarget = 0;
       manualOffsetEdited = true;
       liveTunerActive = false;
       manualNudgeDirection = Math.sign(delta);
@@ -1648,8 +2325,7 @@
             const sorted = liveTunerSamples.slice().sort((a, b) => a - b);
             const median = sorted[Math.floor(sorted.length / 2)];
             const tuned = Math.max(-LIVE_TUNER_MAX_ABS_TARGET, Math.min(LIVE_TUNER_MAX_ABS_TARGET, median * 0.2));
-            syncTargetInput.value = tuned.toFixed(2);
-            renderOffsetValue();
+            previousSyncTarget = tuned;
             liveTunerApplied = true;
             syncInfo.textContent = 'Sync: auto-tuned offset to ' + tuned.toFixed(2) + 's';
           }
@@ -1953,7 +2629,7 @@
       showPlayerControls();
       statusEl.style.display = 'none';
       showOverlay('▶', true, true);
-      savePlaybackState(true);
+      savePlaybackState(true, 'pause');
     }
 
     async function playBoth() {
@@ -2017,7 +2693,7 @@
       showPlayerControls();
       statusEl.style.display = 'none';
       showOverlay('▶', false, false);
-      savePlaybackState(true);
+      savePlaybackState(true, 'play');
     }
 
     form.addEventListener('submit', async function (event) {
@@ -2025,12 +2701,17 @@
       const url = input.value.trim();
       if (!url) return;
       currentMediaUrl = url;
+      if (currentPlexMeta && currentPlexMeta.url !== url) {
+        currentPlexMeta = null;
+      }
       currentSessionMode = 'direct';
       const restoringThisSubmit = !!(restoreResumeState && restoreResumeState.url === url);
       const restoreStartPaused = !!(restoreResumeState && restoreResumeState.url === url && restoreResumeState.paused);
       const requestedStart = (!isLikelyLiveStream(url) && restoringThisSubmit)
         ? Math.max(0, Number(restoreResumeState.position) || 0)
         : 0;
+      const forceStartPaused = restoreStartPaused || autoRestoreSubmitPending;
+      autoRestoreSubmitPending = false;
       if (restoringThisSubmit && Number.isFinite(restoreResumeState.knownDuration) && restoreResumeState.knownDuration > 0) {
         knownDurationSeconds = restoreResumeState.knownDuration;
       }
@@ -2122,21 +2803,32 @@
         }
         mediaBaseTime = 0;
         if (currentIsLiveStream) {
-          setStreamFromTime(0);
-          setAudioFromTime(0);
-          pendingAudioStart = true;
-          liveAudioRequestedAtMs = performance.now();
-          liveAudioReadyAtMs = 0;
-          liveFirstFrameAtMs = 0;
-          liveStartupSeekApplied = false;
-          liveStartupWaitUntilMs = performance.now() + Math.max(LIVE_STARTUP_BUFFER_WAIT_MS, LIVE_STARTUP_CLOCK_WAIT_MS);
-          isPaused = false;
-          updatePlayPauseUi();
-          syncInfo.textContent = 'Sync: waiting for video frame...';
-          scheduleLiveFirstFrameRetry();
+          if (forceStartPaused) {
+            freezeOnNextFrame = true;
+            setStreamFromTime(0);
+            setAudioFromTime(0);
+            pendingAudioStart = false;
+            isPaused = true;
+            pausePositionSeconds = 0;
+            updatePlayPauseUi();
+            syncInfo.textContent = 'Sync: paused (press Play)';
+          } else {
+            setStreamFromTime(0);
+            setAudioFromTime(0);
+            pendingAudioStart = true;
+            liveAudioRequestedAtMs = performance.now();
+            liveAudioReadyAtMs = 0;
+            liveFirstFrameAtMs = 0;
+            liveStartupSeekApplied = false;
+            liveStartupWaitUntilMs = performance.now() + Math.max(LIVE_STARTUP_BUFFER_WAIT_MS, LIVE_STARTUP_CLOCK_WAIT_MS);
+            isPaused = false;
+            updatePlayPauseUi();
+            syncInfo.textContent = 'Sync: waiting for video frame...';
+            scheduleLiveFirstFrameRetry();
+          }
         } else {
           mediaBaseTime = requestedStart;
-          if (restoreStartPaused) {
+          if (forceStartPaused) {
             pendingAudioStart = false;
             freezeOnNextFrame = true;
             isPaused = true;
@@ -2246,7 +2938,7 @@
       syncInfo.textContent = 'Sync: stream error';
       overlayPlayPauseBtn.disabled = true;
       updatePlayPauseUi();
-      savePlaybackState(true);
+      savePlaybackState(true, 'seek');
     });
 
     audio.addEventListener('canplay', function () {
@@ -2361,7 +3053,7 @@
       updatePlayPauseUi();
       updateLiveStartAudioButton();
       showPlayerControls();
-      savePlaybackState(true);
+      savePlaybackState(true, 'ended');
     });
 
     audio.addEventListener('error', function () {
@@ -2402,7 +3094,7 @@
       overlayPlayPauseBtn.disabled = true;
       updatePlayPauseUi();
       updateLiveStartAudioButton();
-      savePlaybackState(true);
+      savePlaybackState(true, 'stop');
     });
 
     liveMasterVideo.addEventListener('error', function () {
@@ -2469,11 +3161,29 @@
 
     screen.addEventListener('mouseenter', showPlayerControls);
     screen.addEventListener('mousemove', showPlayerControls);
+    screen.addEventListener('dblclick', function (event) {
+      if (event.target && event.target.closest('#playerControls')) return;
+      event.preventDefault();
+      toggleFullWidthMode();
+    });
     screen.addEventListener('mouseleave', function () {
       hidePlayerControlsSoon(900);
     });
     screen.addEventListener('pointerdown', function (event) {
       if (event.pointerType === 'touch') {
+        const nowMs = Date.now();
+        const dx = (event.clientX || 0) - lastMediaTapX;
+        const dy = (event.clientY || 0) - lastMediaTapY;
+        const closeTap = (dx * dx + dy * dy) <= (28 * 28);
+        if (nowMs - lastMediaTapAtMs < 340 && closeTap) {
+          event.preventDefault();
+          lastMediaTapAtMs = 0;
+          toggleFullWidthMode();
+          return;
+        }
+        lastMediaTapAtMs = nowMs;
+        lastMediaTapX = event.clientX || 0;
+        lastMediaTapY = event.clientY || 0;
         showPlayerControls();
       }
     });
@@ -2537,6 +3247,10 @@
     });
 
     window.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && channelsModal.classList.contains('show')) {
+        closeChannelsModal();
+        return;
+      }
       if (event.key.toLowerCase() !== 'f' || event.ctrlKey || event.metaKey || event.altKey) return;
       const tag = (event.target && event.target.tagName) ? event.target.tagName.toLowerCase() : '';
       if (tag === 'input' || tag === 'textarea' || tag === 'select' || (event.target && event.target.isContentEditable)) {
@@ -2546,25 +3260,22 @@
       toggleFullWidthMode();
     });
 
-    syncTargetInput.addEventListener('input', function () {
-      const next = getTargetOffsetSeconds();
-      const delta = next - previousSyncTarget;
-      previousSyncTarget = next;
-      renderOffsetValue();
-      manualOffsetEdited = true;
-      liveTunerActive = false;
-      if (Math.abs(delta) >= 0.01) {
-        manualNudgeDirection = Math.sign(delta);
-        manualNudgeUntilMs = Date.now() + 1400;
+    channelsBtn.addEventListener('click', function () {
+      openChannelsModal();
+    });
+
+    channelsCloseBtn.addEventListener('click', function () {
+      closeChannelsModal();
+    });
+
+    channelsModal.addEventListener('click', function (event) {
+      if (event.target === channelsModal) {
+        closeChannelsModal();
       }
     });
 
-    videoAheadBtn.addEventListener('click', function () {
-      nudgeSyncTarget(0.25);
-    });
-
-    audioAheadBtn.addEventListener('click', function () {
-      nudgeSyncTarget(-0.25);
+    channelsSearch.addEventListener('input', function () {
+      renderChannelsList(filterChannels(channelsSearch.value));
     });
 
     fpsMatchInput.addEventListener('change', function () {
@@ -2600,6 +3311,7 @@
 
     plexSearch.addEventListener('input', function () {
       const q = plexSearch.value.trim();
+      const requestSeq = ++plexSearchRequestSeq;
       if (plexSearchTimer) {
         clearTimeout(plexSearchTimer);
         plexSearchTimer = null;
@@ -2612,8 +3324,10 @@
       plexSearchTimer = setTimeout(async function () {
         try {
           const res = await fetch('./plex/search?q=' + encodeURIComponent(q), { cache: 'no-store' });
+          if (requestSeq !== plexSearchRequestSeq) return;
           if (!res.ok) return;
           const data = await res.json();
+          if (requestSeq !== plexSearchRequestSeq) return;
           hidePlexBrowser();
           renderPlexSuggestions(data.results || []);
         } catch (_) {}
@@ -2630,6 +3344,10 @@
       savePlaybackState(false);
     }, 3000);
 
+    setInterval(function () {
+      void syncPlexHistoryPull(false);
+    }, PLEX_SYNC_PULL_INTERVAL_MS);
+
     window.addEventListener('beforeunload', function () {
       savePlaybackState(true);
     });
@@ -2639,6 +3357,8 @@
     syncVideoSettingsInputs();
     renderBandwidthMonitor(null);
     renderOffsetValue();
+    void loadPlexHistory();
+    void syncPlexHistoryPull(true);
     refreshSeekUi();
     updatePlayPauseUi();
     updateLiveStartAudioButton();

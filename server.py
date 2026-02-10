@@ -35,13 +35,25 @@ LIVE_BUFFER_ROOT = Path("/tmp/splay_live_buffer")
 LIVE_BUFFER_READY_TIMEOUT_SECONDS = 20.0
 LIVE_BUFFER_MIN_SEGMENTS = 3
 LIVE_BUFFER_HLS_TIME_SECONDS = 2
+CHANNELS_M3U_URL = "http://192.168.0.182:9191/output/m3u"
 PLEX_CONTROL_DIR = Path("/mnt/synology/misc/dev/plex_control")
 PLEX_CTL_PATH = PLEX_CONTROL_DIR / "plexctl.py"
 PLEX_MAPPING_PATH = PLEX_CONTROL_DIR / "plex_content_mapping.json"
+PLEX_HISTORY_PATH = BASE_DIR / "plex_history.json"
+PLEX_HISTORY_MAX_ITEMS = 200
+PLEX_PULL_MAX_ITEMS = 80
+PLEX_SYNC_STATUS = {
+    "last_pull_at": None,
+    "last_push_at": None,
+    "last_pull_error": "",
+    "last_push_error": "",
+}
 
 SESSIONS = {}
 SESSIONS_LOCK = threading.Lock()
 PLEX_CFG_LOCK = threading.Lock()
+PLEX_HISTORY_LOCK = threading.Lock()
+PLEX_SYNC_LOCK = threading.Lock()
 PLEX_CFG = None
 PLEX_MAPPING_CACHE = {"mtime": None, "items": []}
 
@@ -93,6 +105,7 @@ def load_plex_mapping():
                     "title": title,
                     "type": str(info.get("type", "movie")),
                     "content_id": content_id,
+                    "year": info.get("year"),
                     "search_title": normalized_search_text(title),
                 })
 
@@ -127,6 +140,7 @@ def _search_local_mapping(query, limit=12):
             "title": item["title"],
             "type": item["type"],
             "content_id": item["content_id"],
+            "year": item.get("year"),
             "score": 2000,
         } for item in exact[:limit]]
 
@@ -142,6 +156,7 @@ def _search_local_mapping(query, limit=12):
             "title": item["title"],
             "type": item["type"],
             "content_id": item["content_id"],
+            "year": item.get("year"),
             "score": score,
         })
     return out
@@ -224,10 +239,15 @@ def plex_search_live(query, limit=12):
         seen.add(key)
 
         score = score_match(q, normalized_search_text(title))
+        year_value = None
+        raw_year = (node.get("year") or "").strip()
+        if raw_year.isdigit():
+            year_value = int(raw_year)
         results.append({
             "title": title or "Untitled",
             "type": item_type,
             "content_id": content_id,
+            "year": year_value,
             "score": score,
         })
 
@@ -254,14 +274,212 @@ def plex_search(query, limit=12):
     return _search_local_mapping(query, limit=limit)
 
 
-def plex_get_xml(path):
+def plex_get_bytes(path, timeout=20):
     cfg = load_plex_config()
     sep = "&" if "?" in path else "?"
     url = f"{cfg['base_url']}{path}{sep}X-Plex-Token={urllib.parse.quote(cfg['token'])}"
     req = urllib.request.Request(url, headers={"User-Agent": "splay/1.0"})
-    with urllib.request.urlopen(req, timeout=20) as res:
-        data = res.read()
-    return ET.fromstring(data)
+    with urllib.request.urlopen(req, timeout=timeout) as res:
+        return res.read()
+
+
+def plex_get_xml(path, timeout=20):
+    return ET.fromstring(plex_get_bytes(path, timeout=timeout))
+
+
+def plex_get_metadata_video(content_id):
+    root = plex_get_xml(f"/library/metadata/{content_id}")
+    video = root.find("./Video")
+    if video is None:
+        return None, root
+    return video, root
+
+
+def parse_part_id_from_url(video_url):
+    value = str(video_url or "").strip()
+    match = re.search(r"/library/parts/(\d+)", value)
+    if not match:
+        return ""
+    return match.group(1)
+
+
+def extract_history_title(video):
+    item_type = (video.get("type") or "").lower()
+    if item_type == "episode":
+        gp = (video.get("grandparentTitle") or "").strip()
+        ep = (video.get("title") or "").strip()
+        if gp and ep:
+            return f"{gp} - {ep}"
+    return (video.get("title") or "").strip() or "Untitled"
+
+
+def resolve_content_id_from_part_id(part_id):
+    value = str(part_id or "").strip()
+    if not value:
+        return ""
+    try:
+        root = plex_get_xml(f"/library/parts/{value}")
+        part = root.find(".//Part")
+        if part is None:
+            return ""
+        key = (part.get("key") or "").strip()
+        match = re.search(r"/library/metadata/(\d+)", key)
+        if match:
+            return match.group(1)
+    except Exception:
+        return ""
+    return ""
+
+
+def resolve_content_id_from_title(title, item_type):
+    query = str(title or "").strip()
+    wanted = str(item_type or "").strip().lower()
+    if not query:
+        return ""
+    try:
+        results = plex_search(query, limit=20)
+    except Exception:
+        return ""
+    if not results:
+        return ""
+    norm_q = normalized_search_text(query)
+    candidates = []
+    for item in results:
+        cid = str(item.get("content_id") or "").strip()
+        if not cid:
+            continue
+        typ = str(item.get("type") or "").strip().lower()
+        title_norm = normalized_search_text(str(item.get("title") or ""))
+        score = int(item.get("score") or 0)
+        if wanted and typ == wanted:
+            score += 120
+        if norm_q and title_norm == norm_q:
+            score += 500
+        elif norm_q and norm_q in title_norm:
+            score += 120
+        candidates.append((score, cid))
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda pair: pair[0], reverse=True)
+    return candidates[0][1]
+
+
+def plex_sync_write_timeline(content_id, position_seconds, duration_seconds, state):
+    rating_key = str(content_id or "").strip()
+    if not rating_key:
+        raise RuntimeError("Missing content_id")
+    pos_sec = max(0.0, float(position_seconds or 0.0))
+    duration_sec = float(duration_seconds or 0.0)
+    if duration_sec <= 0:
+        video, _ = plex_get_metadata_video(rating_key)
+        if video is not None:
+            try:
+                duration_sec = float(video.get("duration", "0") or "0") / 1000.0
+            except (TypeError, ValueError):
+                duration_sec = 0.0
+    duration_ms = int(max(pos_sec, duration_sec, 1.0) * 1000.0)
+    position_ms = int(pos_sec * 1000.0)
+    state_value = str(state or "playing").strip().lower()
+    if state_value not in ("playing", "paused", "stopped", "buffering"):
+        state_value = "playing"
+
+    path = (
+        "/:/timeline"
+        f"?ratingKey={urllib.parse.quote(rating_key)}"
+        f"&key={urllib.parse.quote('/library/metadata/' + rating_key)}"
+        "&identifier=com.plexapp.plugins.library"
+        f"&state={urllib.parse.quote(state_value)}"
+        f"&time={position_ms}"
+        f"&duration={duration_ms}"
+        "&X-Plex-Client-Identifier=splay-sync"
+        "&X-Plex-Product=Splay"
+        "&X-Plex-Version=1.0"
+        "&X-Plex-Platform=Web"
+    )
+    plex_get_bytes(path, timeout=12)
+
+
+def plex_sync_mark_watched(content_id):
+    rating_key = str(content_id or "").strip()
+    if not rating_key:
+        return
+    path = (
+        "/:/scrobble"
+        f"?key={urllib.parse.quote(rating_key)}"
+        "&identifier=com.plexapp.plugins.library"
+    )
+    plex_get_bytes(path, timeout=12)
+
+
+def plex_fetch_recent_history(limit=PLEX_PULL_MAX_ITEMS):
+    root = plex_get_xml("/status/sessions/history/all")
+    out = []
+    seen = set()
+    now_ms = int(time.time() * 1000)
+    for node in root.findall("./Video"):
+        content_id = (node.get("ratingKey") or "").strip()
+        item_type = (node.get("type") or "").strip().lower()
+        if not content_id or item_type not in ("movie", "episode"):
+            continue
+        if content_id in seen:
+            continue
+        seen.add(content_id)
+        try:
+            video, _ = plex_get_metadata_video(content_id)
+        except Exception:
+            continue
+        if video is None:
+            continue
+        part = video.find(".//Part")
+        if part is None or not part.get("key"):
+            continue
+
+        duration_sec = 0.0
+        offset_sec = 0.0
+        try:
+            duration_sec = float(video.get("duration", "0") or "0") / 1000.0
+        except (TypeError, ValueError):
+            duration_sec = 0.0
+        try:
+            offset_sec = float(video.get("viewOffset", "0") or "0") / 1000.0
+        except (TypeError, ValueError):
+            offset_sec = 0.0
+        try:
+            view_count = int(video.get("viewCount", "0") or "0")
+        except (TypeError, ValueError):
+            view_count = 0
+
+        if offset_sec <= 0 and view_count <= 0:
+            continue
+        if offset_sec <= 0 and view_count > 0 and duration_sec > 0:
+            offset_sec = duration_sec
+
+        viewed_ts = 0
+        for key in ("lastViewedAt", "viewedAt", "updatedAt"):
+            raw = (video.get(key) or "").strip()
+            if raw.isdigit():
+                viewed_ts = int(raw)
+                break
+        updated_at_ms = viewed_ts * 1000 if viewed_ts > 0 else now_ms
+        part_key = (part.get("key") or "").strip()
+        part_id = parse_part_id_from_url(part_key)
+        title = extract_history_title(video)
+
+        out.append({
+            "url": build_plex_part_url(part_key),
+            "title": title,
+            "type": item_type,
+            "position": max(0.0, offset_sec),
+            "known_duration": duration_sec if duration_sec > 0 else None,
+            "updated_at": updated_at_ms,
+            "plex_updated_at": updated_at_ms,
+            "content_id": content_id,
+            "part_id": part_id,
+            "source": "plex",
+        })
+        if len(out) >= int(limit):
+            break
+    return out
 
 
 def build_plex_part_url(part_key):
@@ -273,6 +491,36 @@ def build_plex_part_url(part_key):
 
 
 def resolve_plex_item(content_id, item_type):
+    def build_resolved(video_node, part_node, resolved_title, fallback_content_id):
+        duration_sec = None
+        start_sec = 0.0
+        try:
+            raw_duration = float(video_node.get("duration", "0") or "0")
+            if raw_duration > 0:
+                duration_sec = raw_duration / 1000.0
+        except (TypeError, ValueError):
+            duration_sec = None
+        try:
+            raw_offset = float(video_node.get("viewOffset", "0") or "0")
+            if raw_offset > 0:
+                start_sec = raw_offset / 1000.0
+        except (TypeError, ValueError):
+            start_sec = 0.0
+        if start_sec <= 0:
+            try:
+                if int(video_node.get("viewCount", "0") or "0") > 0 and duration_sec and duration_sec > 0:
+                    start_sec = duration_sec
+            except (TypeError, ValueError):
+                pass
+        return {
+            "url": build_plex_part_url(part_node.get("key")),
+            "title": resolved_title,
+            "content_id": str(video_node.get("ratingKey") or fallback_content_id or ""),
+            "part_id": parse_part_id_from_url(part_node.get("key")),
+            "start_position": max(0.0, float(start_sec or 0.0)),
+            "known_duration": duration_sec if duration_sec and duration_sec > 0 else None,
+        }
+
     item_type = (item_type or "movie").lower()
     if item_type == "episode":
         root = plex_get_xml(f"/library/metadata/{content_id}")
@@ -284,7 +532,7 @@ def resolve_plex_item(content_id, item_type):
             raise RuntimeError("No playable part found for episode")
         series_title = video.get("grandparentTitle") or "Series"
         ep_title = video.get("title") or "Episode"
-        return {"url": build_plex_part_url(part.get("key")), "title": f"{series_title} - {ep_title}"}
+        return build_resolved(video, part, f"{series_title} - {ep_title}", content_id)
 
     if item_type == "season":
         root = plex_get_xml(f"/library/metadata/{content_id}/children")
@@ -296,7 +544,7 @@ def resolve_plex_item(content_id, item_type):
             raise RuntimeError("No playable part found for season")
         series_title = video.get("grandparentTitle") or "Series"
         ep_title = video.get("title") or "Episode"
-        return {"url": build_plex_part_url(part.get("key")), "title": f"{series_title} - {ep_title}"}
+        return build_resolved(video, part, f"{series_title} - {ep_title}", "")
 
     if item_type == "series":
         root = plex_get_xml(f"/library/metadata/{content_id}/allLeaves")
@@ -308,7 +556,7 @@ def resolve_plex_item(content_id, item_type):
             raise RuntimeError("No playable part found for selected series")
         title = video.get("grandparentTitle") or "Series"
         ep = video.get("title") or "Episode"
-        return {"url": build_plex_part_url(part.get("key")), "title": f"{title} - {ep}"}
+        return build_resolved(video, part, f"{title} - {ep}", "")
 
     root = plex_get_xml(f"/library/metadata/{content_id}")
     video = root.find("./Video")
@@ -318,7 +566,7 @@ def resolve_plex_item(content_id, item_type):
     if part is None or not part.get("key"):
         raise RuntimeError("No playable part found for item")
     title = video.get("title") or "Movie"
-    return {"url": build_plex_part_url(part.get("key")), "title": title}
+    return build_resolved(video, part, title, content_id)
 
 
 def plex_list_seasons(show_id):
@@ -397,6 +645,220 @@ def is_mpegts_like_stream(video_url):
 
 def is_local_input_path(video_url):
     return video_url.startswith("/") or video_url.startswith("./") or video_url.startswith("../")
+
+
+def parse_channels_m3u(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (splay)"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        raw = resp.read()
+    text = raw.decode("utf-8", errors="ignore")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    channels = []
+    pending_name = ""
+    pending_group = ""
+    pending_logo = ""
+    for line in lines:
+        if line.startswith("#EXTINF:"):
+            pending_name = ""
+            pending_group = ""
+            pending_logo = ""
+            attrs = line
+            group_match = re.search(r'group-title="([^"]+)"', attrs, flags=re.IGNORECASE)
+            if group_match:
+                pending_group = group_match.group(1).strip()
+            logo_match = re.search(r'tvg-logo="([^"]+)"', attrs, flags=re.IGNORECASE)
+            if logo_match:
+                pending_logo = logo_match.group(1).strip()
+            if "," in line:
+                pending_name = line.rsplit(",", 1)[1].strip()
+            continue
+        if line.startswith("#"):
+            continue
+        if line.lower().startswith(("http://", "https://")):
+            channels.append({
+                "name": pending_name or line,
+                "url": line,
+                "group": pending_group or "",
+                "logo": pending_logo or "",
+            })
+            pending_name = ""
+            pending_group = ""
+            pending_logo = ""
+    return channels
+
+
+def _normalize_plex_history_entry(entry):
+    if not isinstance(entry, dict):
+        return None
+    url = str(entry.get("url", "")).strip()
+    title = str(entry.get("title", "")).strip()
+    if not url or not title:
+        return None
+    item_type = str(entry.get("type", "item") or "item").strip().lower()
+    try:
+        position = float(entry.get("position", 0) or 0)
+    except (TypeError, ValueError):
+        position = 0.0
+    try:
+        known_duration = float(entry.get("known_duration")) if entry.get("known_duration") is not None else None
+    except (TypeError, ValueError):
+        known_duration = None
+    try:
+        updated_at = int(entry.get("updated_at") or int(time.time() * 1000))
+    except (TypeError, ValueError):
+        updated_at = int(time.time() * 1000)
+    try:
+        plex_updated_at = int(entry.get("plex_updated_at")) if entry.get("plex_updated_at") is not None else None
+    except (TypeError, ValueError):
+        plex_updated_at = None
+    content_id = str(entry.get("content_id", "") or "").strip()
+    part_id = str(entry.get("part_id", "") or "").strip()
+    source = str(entry.get("source", "") or "").strip().lower()
+    if not content_id and part_id:
+        content_id = resolve_content_id_from_part_id(part_id)
+    if not part_id:
+        part_id = parse_part_id_from_url(url)
+
+    return {
+        "url": url,
+        "title": title,
+        "type": item_type if item_type else "item",
+        "position": position if position >= 0 else 0.0,
+        "known_duration": known_duration if (known_duration is not None and known_duration > 0) else None,
+        "updated_at": updated_at,
+        "plex_updated_at": plex_updated_at if plex_updated_at and plex_updated_at > 0 else None,
+        "content_id": content_id,
+        "part_id": part_id,
+        "source": source if source else None,
+    }
+
+
+def _load_plex_history_entries():
+    if not PLEX_HISTORY_PATH.exists():
+        return []
+    try:
+        raw = json.loads(PLEX_HISTORY_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(raw, list):
+        return []
+    items = []
+    for item in raw:
+        normalized = _normalize_plex_history_entry(item)
+        if normalized is not None:
+            items.append(normalized)
+    items.sort(key=lambda item: int(item.get("updated_at") or 0), reverse=True)
+    return items[:PLEX_HISTORY_MAX_ITEMS]
+
+
+def _save_plex_history_entries(items):
+    cleaned = []
+    for item in items:
+        normalized = _normalize_plex_history_entry(item)
+        if normalized is not None:
+            cleaned.append(normalized)
+    cleaned.sort(key=lambda item: int(item.get("updated_at") or 0), reverse=True)
+    payload = cleaned[:PLEX_HISTORY_MAX_ITEMS]
+    PLEX_HISTORY_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return payload
+
+
+def list_plex_history():
+    with PLEX_HISTORY_LOCK:
+        return _load_plex_history_entries()
+
+
+def upsert_plex_history(entry):
+    normalized = _normalize_plex_history_entry(entry)
+    if normalized is None:
+        return None
+    with PLEX_HISTORY_LOCK:
+        items = _load_plex_history_entries()
+        target_content_id = str(normalized.get("content_id") or "").strip()
+        target_url = str(normalized.get("url") or "").strip()
+        index = -1
+        if target_content_id:
+            index = next((i for i, item in enumerate(items) if str(item.get("content_id") or "").strip() == target_content_id), -1)
+        if index < 0 and target_url:
+            index = next((i for i, item in enumerate(items) if item.get("url") == target_url), -1)
+        if index >= 0:
+            existing = items[index]
+            merged = {**existing, **normalized}
+            existing_ts = int(existing.get("updated_at") or 0)
+            incoming_ts = int(normalized.get("updated_at") or 0)
+            if existing_ts > incoming_ts:
+                merged["updated_at"] = existing_ts
+            existing_plex_ts = int(existing.get("plex_updated_at") or 0)
+            incoming_plex_ts = int(normalized.get("plex_updated_at") or 0)
+            if existing_plex_ts > incoming_plex_ts:
+                merged["plex_updated_at"] = existing_plex_ts
+            items[index] = merged
+        else:
+            items.append(normalized)
+        saved = _save_plex_history_entries(items)
+    if target_content_id:
+        matched = next((item for item in saved if str(item.get("content_id") or "").strip() == target_content_id), None)
+        if matched is not None:
+            return matched
+    return next((item for item in saved if item.get("url") == target_url), normalized)
+
+
+def merge_plex_history_from_server(entries):
+    imported = 0
+    updated = 0
+    unchanged = 0
+    skipped = 0
+    with PLEX_HISTORY_LOCK:
+        items = _load_plex_history_entries()
+        for raw in entries:
+            normalized = _normalize_plex_history_entry(raw)
+            if normalized is None:
+                skipped += 1
+                continue
+            target_content_id = str(normalized.get("content_id") or "").strip()
+            target_url = str(normalized.get("url") or "").strip()
+            index = -1
+            if target_content_id:
+                index = next((i for i, item in enumerate(items) if str(item.get("content_id") or "").strip() == target_content_id), -1)
+            if index < 0 and target_url:
+                index = next((i for i, item in enumerate(items) if str(item.get("url") or "").strip() == target_url), -1)
+            if index < 0:
+                items.append(normalized)
+                imported += 1
+                continue
+
+            current = items[index]
+            current_ts = int(current.get("updated_at") or 0)
+            incoming_ts = int(normalized.get("updated_at") or 0)
+            if incoming_ts > current_ts:
+                items[index] = {**current, **normalized, "source": "merged"}
+                updated += 1
+            elif incoming_ts == current_ts and float(normalized.get("position") or 0) > float(current.get("position") or 0):
+                items[index] = {**current, **normalized, "source": "merged"}
+                updated += 1
+            else:
+                unchanged += 1
+        saved = _save_plex_history_entries(items)
+    return {
+        "imported": imported,
+        "updated": updated,
+        "unchanged": unchanged,
+        "skipped": skipped,
+        "total": len(saved),
+    }
+
+
+def delete_plex_history(url):
+    target = str(url or "").strip()
+    if not target:
+        return False
+    with PLEX_HISTORY_LOCK:
+        items = _load_plex_history_entries()
+        next_items = [item for item in items if item.get("url") != target]
+        if len(next_items) == len(items):
+            return False
+        _save_plex_history_entries(next_items)
+        return True
 
 
 def build_input_args(video_url, start_seconds, for_audio=False):
@@ -890,6 +1352,18 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_plex_episodes(parsed.query)
             return
 
+        if parsed.path == "/channels/list":
+            self.serve_channels_list()
+            return
+
+        if parsed.path == "/history/plex":
+            self.serve_plex_history_list()
+            return
+
+        if parsed.path == "/history/plex/sync/status":
+            self.serve_plex_sync_status()
+            return
+
         if parsed.path == "/mjpeg":
             self.serve_mjpeg(parsed.query)
             return
@@ -899,6 +1373,28 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if self.serve_static(parsed.path):
+            return
+
+        self.send_error(404, "Not found")
+
+    def do_POST(self):
+        cleanup_sessions()
+        parsed = urlparse(self.path)
+
+        if parsed.path == "/history/plex/upsert":
+            self.serve_plex_history_upsert()
+            return
+
+        if parsed.path == "/history/plex/delete":
+            self.serve_plex_history_delete()
+            return
+
+        if parsed.path == "/history/plex/sync/pull":
+            self.serve_plex_history_sync_pull()
+            return
+
+        if parsed.path == "/history/plex/sync/push":
+            self.serve_plex_history_sync_push()
             return
 
         self.send_error(404, "Not found")
@@ -1095,6 +1591,146 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"results": plex_list_episodes(season_id)})
         except Exception as err:
             self.send_error(500, f"Plex episodes failed: {err}")
+
+    def serve_channels_list(self):
+        try:
+            channels = parse_channels_m3u(CHANNELS_M3U_URL)
+            self.send_json({"results": channels})
+        except Exception as err:
+            self.send_error(500, f"Channels load failed: {err}")
+
+    def serve_plex_history_list(self):
+        try:
+            self.send_json({"results": list_plex_history()})
+        except Exception as err:
+            self.send_error(500, f"Plex history load failed: {err}")
+
+    def serve_plex_history_upsert(self):
+        try:
+            content_length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            content_length = 0
+        if content_length <= 0:
+            self.send_error(400, "Missing request body")
+            return
+        try:
+            body = self.rfile.read(content_length)
+            payload = json.loads(body.decode("utf-8"))
+        except Exception:
+            self.send_error(400, "Invalid JSON body")
+            return
+        item = upsert_plex_history(payload)
+        if item is None:
+            self.send_error(400, "Invalid history payload")
+            return
+        self.send_json({"ok": True, "item": item})
+
+    def serve_plex_history_delete(self):
+        try:
+            content_length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            content_length = 0
+        if content_length <= 0:
+            self.send_error(400, "Missing request body")
+            return
+        try:
+            body = self.rfile.read(content_length)
+            payload = json.loads(body.decode("utf-8"))
+        except Exception:
+            self.send_error(400, "Invalid JSON body")
+            return
+        url = ""
+        if isinstance(payload, dict):
+            url = str(payload.get("url", "")).strip()
+        if not url:
+            self.send_error(400, "Missing url")
+            return
+        removed = delete_plex_history(url)
+        self.send_json({"ok": True, "removed": bool(removed), "url": url})
+
+    def serve_plex_sync_status(self):
+        with PLEX_SYNC_LOCK:
+            self.send_json({"ok": True, **PLEX_SYNC_STATUS})
+
+    def serve_plex_history_sync_pull(self):
+        try:
+            incoming = plex_fetch_recent_history(limit=PLEX_PULL_MAX_ITEMS)
+            merged = merge_plex_history_from_server(incoming)
+            with PLEX_SYNC_LOCK:
+                PLEX_SYNC_STATUS["last_pull_at"] = int(time.time() * 1000)
+                PLEX_SYNC_STATUS["last_pull_error"] = ""
+            self.send_json({"ok": True, **merged})
+        except Exception as err:
+            with PLEX_SYNC_LOCK:
+                PLEX_SYNC_STATUS["last_pull_error"] = str(err)
+            self.send_error(500, f"Plex history sync pull failed: {err}")
+
+    def serve_plex_history_sync_push(self):
+        try:
+            content_length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            content_length = 0
+        if content_length <= 0:
+            self.send_error(400, "Missing request body")
+            return
+        try:
+            body = self.rfile.read(content_length)
+            payload = json.loads(body.decode("utf-8"))
+        except Exception:
+            self.send_error(400, "Invalid JSON body")
+            return
+        if not isinstance(payload, dict):
+            self.send_error(400, "Invalid payload")
+            return
+
+        content_id = str(payload.get("content_id", "") or "").strip()
+        if not content_id:
+            url = str(payload.get("url", "") or "").strip()
+            part_id = str(payload.get("part_id", "") or "").strip() or parse_part_id_from_url(url)
+            if part_id:
+                content_id = resolve_content_id_from_part_id(part_id)
+        if not content_id:
+            content_id = resolve_content_id_from_title(
+                str(payload.get("title", "") or "").strip(),
+                str(payload.get("type", "") or "").strip(),
+            )
+        if not content_id:
+            self.send_error(400, "Missing content_id")
+            return
+
+        try:
+            position = max(0.0, float(payload.get("position", 0) or 0))
+        except (TypeError, ValueError):
+            position = 0.0
+        try:
+            known_duration = float(payload.get("known_duration")) if payload.get("known_duration") is not None else 0.0
+        except (TypeError, ValueError):
+            known_duration = 0.0
+        state = str(payload.get("state", "playing") or "playing").strip().lower()
+        event = str(payload.get("event", "") or "").strip().lower()
+        should_mark_watched = bool(payload.get("mark_watched", False))
+
+        try:
+            plex_sync_write_timeline(content_id, position, known_duration, state)
+            marked = False
+            if should_mark_watched:
+                plex_sync_mark_watched(content_id)
+                marked = True
+            with PLEX_SYNC_LOCK:
+                PLEX_SYNC_STATUS["last_push_at"] = int(time.time() * 1000)
+                PLEX_SYNC_STATUS["last_push_error"] = ""
+            self.send_json({
+                "ok": True,
+                "content_id": content_id,
+                "position": position,
+                "state": state,
+                "event": event,
+                "marked_watched": marked,
+            })
+        except Exception as err:
+            with PLEX_SYNC_LOCK:
+                PLEX_SYNC_STATUS["last_push_error"] = str(err)
+            self.send_error(500, f"Plex history sync push failed: {err}")
 
     def serve_mjpeg(self, query):
         params = parse_qs(query)
