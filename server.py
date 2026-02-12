@@ -4,6 +4,7 @@ from urllib.parse import urlparse, parse_qs, unquote
 from pathlib import Path
 from difflib import SequenceMatcher
 import json
+import mimetypes
 import os
 import re
 import select
@@ -29,6 +30,10 @@ LIVE_ANALYZEDURATION = "5M"
 LIVE_AUDIO_PROBESIZE = "1M"
 LIVE_AUDIO_ANALYZEDURATION = "1M"
 LIVE_VIDEO_FPS = 15
+H264_VIDEO_CRF = "25"
+H264_VIDEO_PRESET = "veryfast"
+H264_GOP = "30"
+H264_TARGET_FPS = 30
 LIVE_FIRST_CHUNK_TIMEOUT_SECONDS = 25.0
 DEFAULT_FIRST_CHUNK_TIMEOUT_SECONDS = 4.0
 LIVE_BUFFER_ROOT = Path("/tmp/splay_live_buffer")
@@ -994,6 +999,8 @@ def create_session(video_url):
             "url": video_url,
             "play_url": video_url,
             "mode": "direct",
+            "video_renderer": "mjpeg",
+            "video_encoder": "cpu",
             "video_clock": 0.0,
             "video_raw_clock": None,
             "video_clock_origin": None,
@@ -1168,6 +1175,17 @@ def set_video_clock(sid, value):
             session["last_seen"] = now
 
 
+def set_session_video_path(sid, renderer, encoder):
+    if not sid:
+        return
+    with SESSIONS_LOCK:
+        session = SESSIONS.get(sid)
+        if session:
+            session["video_renderer"] = str(renderer or "mjpeg")
+            session["video_encoder"] = str(encoder or "cpu")
+            session["last_seen"] = time.time()
+
+
 def reset_video_clock(sid):
     with SESSIONS_LOCK:
         session = SESSIONS.get(sid)
@@ -1287,6 +1305,8 @@ def read_session_metrics(sid):
             "video_bps": video_bits / window,
             "audio_bps": audio_bits / window,
             "total_bps": (video_bits + audio_bits) / window,
+            "video_renderer": str(session.get("video_renderer") or "mjpeg"),
+            "video_encoder": str(session.get("video_encoder") or "cpu"),
             "ts": now,
         }
 
@@ -1356,6 +1376,10 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_channels_list()
             return
 
+        if parsed.path == "/channels/logo":
+            self.serve_channel_logo(parsed.query)
+            return
+
         if parsed.path == "/history/plex":
             self.serve_plex_history_list()
             return
@@ -1366,6 +1390,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/mjpeg":
             self.serve_mjpeg(parsed.query)
+            return
+
+        if parsed.path == "/h264":
+            self.serve_h264(parsed.query)
             return
 
         if parsed.path == "/audio":
@@ -1598,6 +1626,33 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"results": channels})
         except Exception as err:
             self.send_error(500, f"Channels load failed: {err}")
+
+    def serve_channel_logo(self, query):
+        params = parse_qs(query)
+        logo_url = unquote((params.get("url") or [""])[0]).strip()
+        if not logo_url or not is_valid_http_url(logo_url):
+            self.send_error(400, "Missing/invalid logo url")
+            return
+        req = urllib.request.Request(logo_url, headers={"User-Agent": "Mozilla/5.0 (splay)"})
+        try:
+            with urllib.request.urlopen(req, timeout=12) as res:
+                content_type = (res.headers.get("Content-Type") or "").strip()
+                data = res.read(2 * 1024 * 1024 + 1)
+        except Exception as err:
+            self.send_error(502, f"Logo fetch failed: {err}")
+            return
+        if len(data) > 2 * 1024 * 1024:
+            self.send_error(413, "Logo too large")
+            return
+        if not content_type:
+            guessed, _ = mimetypes.guess_type(logo_url)
+            content_type = guessed or "application/octet-stream"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "public, max-age=21600")
+        self.end_headers()
+        self.wfile.write(data)
 
     def serve_plex_history_list(self):
         try:
@@ -1846,7 +1901,8 @@ class Handler(BaseHTTPRequestHandler):
                     proc.kill()
             self.send_error(502, "Could not read first video frame from source")
             return
-        elif sid:
+        if sid:
+            set_session_video_path(sid, "mjpeg", "cpu")
             threading.Thread(target=watch_progress, args=(proc, sid, set_video_clock_from_raw), daemon=True).start()
 
         try:
@@ -1944,6 +2000,181 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(chunk)
                 self.wfile.flush()
                 add_session_bytes(sid, "audio", len(chunk))
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+
+    def serve_h264(self, query):
+        params = parse_qs(query)
+        sid, video_url = session_from_params(params)
+        session_mode = get_session_mode(sid)
+        start_seconds = parse_start_seconds(params)
+        live_input = is_likely_live_stream(video_url or "")
+        # Keep WebCodecs H.264 playback stable across mixed source frame rates.
+        # Always normalize output to 30fps for this path.
+        fps_value = H264_TARGET_FPS
+        requested_h264_q = parse_int_param(params, "h264_q", 10, 51)
+        h264_q = str(requested_h264_q if requested_h264_q is not None else int(H264_VIDEO_CRF))
+
+        if not video_url:
+            self.send_error(400, "Missing/invalid sid or url parameter")
+            return
+
+        if sid:
+            reset_video_clock(sid)
+
+        input_args = build_input_args(video_url, start_seconds, for_audio=False)
+        if session_mode == "buffered_live" and "-re" not in input_args:
+            # Pace buffered-live playback at wall clock for stable A/V sync behavior.
+            input_args = ["-re", *input_args]
+
+        video_filter = f"scale='min({VIDEO_WIDTH},iw)':-2:flags=lanczos,format=yuv420p"
+        if fps_value is not None:
+            video_filter = f"fps={fps_value}," + video_filter
+
+        cpu_cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostats",
+            "-progress",
+            "pipe:2",
+            *input_args,
+            "-map",
+            "0:v:0",
+            "-an",
+            "-vf",
+            video_filter,
+            "-c:v",
+            "libx264",
+            "-preset",
+            H264_VIDEO_PRESET,
+            "-tune",
+            "zerolatency",
+            "-profile:v",
+            "baseline",
+            "-level:v",
+            "3.1",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            h264_q,
+            "-g",
+            H264_GOP,
+            "-keyint_min",
+            H264_GOP,
+            "-sc_threshold",
+            "0",
+            "-bf",
+            "0",
+            "-f",
+            "h264",
+            "pipe:1",
+        ]
+
+        vaapi_filter = f"scale='min({VIDEO_WIDTH},iw)':-2:flags=lanczos,format=nv12,hwupload"
+        if fps_value is not None:
+            vaapi_filter = f"fps={fps_value}," + vaapi_filter
+
+        vaapi_cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostats",
+            "-progress",
+            "pipe:2",
+            "-init_hw_device",
+            f"vaapi=va:{VAAPI_DEVICE}",
+            "-filter_hw_device",
+            "va",
+            *input_args,
+            "-map",
+            "0:v:0",
+            "-an",
+            "-vf",
+            vaapi_filter,
+            "-c:v",
+            "h264_vaapi",
+            "-qp",
+            h264_q,
+            "-g",
+            H264_GOP,
+            "-bf",
+            "0",
+            "-f",
+            "h264",
+            "pipe:1",
+        ]
+
+        encoder_used = "vaapi"
+        proc = subprocess.Popen(vaapi_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=dict(os.environ))
+        first_chunk_timeout = LIVE_FIRST_CHUNK_TIMEOUT_SECONDS if live_input else DEFAULT_FIRST_CHUNK_TIMEOUT_SECONDS
+        first_chunk = self.read_initial_chunk(proc, timeout_seconds=first_chunk_timeout)
+
+        if not first_chunk:
+            vaapi_err_tail = self.read_stderr_tail(proc)
+            print(
+                "[splay] h264 vaapi startup failed; falling back to libx264"
+                f" live={live_input} sid={sid or '-'}"
+                f" url={video_url}"
+                f" stderr={vaapi_err_tail or '-'}"
+            )
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            proc = subprocess.Popen(cpu_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=dict(os.environ))
+            encoder_used = "cpu"
+            first_chunk = self.read_initial_chunk(proc, timeout_seconds=first_chunk_timeout)
+
+        if not first_chunk:
+            err_tail = self.read_stderr_tail(proc)
+            print(
+                "[splay] h264 startup no first chunk"
+                f" live={live_input} sid={sid or '-'}"
+                f" timeout={first_chunk_timeout}s"
+                f" url={video_url}"
+                f" stderr={err_tail or '-'}"
+            )
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            self.send_error(502, "Could not read first H.264 chunk from source")
+            return
+        if sid:
+            set_session_video_path(sid, "h264", encoder_used)
+            threading.Thread(target=watch_progress, args=(proc, sid, set_video_clock_from_raw), daemon=True).start()
+
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/h264")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Pragma", "no-cache")
+            self.end_headers()
+            assert proc.stdout is not None
+            self.wfile.write(first_chunk)
+            self.wfile.flush()
+            add_session_bytes(sid, "video", len(first_chunk))
+            while True:
+                chunk = proc.stdout.read(8192)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+                add_session_bytes(sid, "video", len(chunk))
         except (BrokenPipeError, ConnectionResetError):
             pass
         finally:

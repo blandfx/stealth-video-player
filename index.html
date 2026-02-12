@@ -603,12 +603,30 @@
       aspect-ratio: auto;
       border-radius: 0;
       border: 0;
+      background: #000;
+    }
+
+    body.full-width #stream,
+    body.full-width #streamCanvas {
+      width: 100%;
+      height: auto;
+      max-width: 100%;
+      max-height: none;
+      object-fit: contain;
+      margin: 0 auto;
     }
 
     #stream {
       width: 100%;
       height: 100%;
       object-fit: contain;
+      display: none;
+      background: #000;
+    }
+
+    #streamCanvas {
+      width: 100%;
+      height: 100%;
       display: none;
       background: #000;
     }
@@ -787,6 +805,21 @@
       </div>
       <div class="video-settings-grid">
         <div class="setting-card">
+          <div class="setting-label">Video Renderer</div>
+          <div class="setting-inline">
+            <label class="setting-inline">
+              <input type="radio" name="playerMode" value="mjpeg" checked>
+              <span>MJPEG (legacy)</span>
+            </label>
+          </div>
+          <div class="setting-inline">
+            <label class="setting-inline">
+              <input type="radio" name="playerMode" value="webcodecs_h264">
+              <span>WebCodecs H.264</span>
+            </label>
+          </div>
+        </div>
+        <div class="setting-card">
           <div class="setting-label">Frame Rate</div>
           <div class="setting-inline">
             <input id="fpsInput" type="number" min="1" max="60" step="1" value="15">
@@ -807,6 +840,16 @@
             <div class="quality-note">Lower value = higher quality / more bandwidth. Higher value = lower quality / less bandwidth.</div>
           </div>
         </div>
+        <div class="setting-card">
+          <div class="quality-block">
+            <span class="setting-label">H264 Quality (QP/CRF)</span>
+            <div class="quality-slider-row">
+              <input id="h264QualityInput" type="range" min="10" max="40" step="1" value="25">
+              <strong id="h264QualityValue">25</strong>
+            </div>
+            <div class="quality-note">Lower value = higher quality / more bandwidth. Used for WebCodecs H264 mode.</div>
+          </div>
+        </div>
       </div>
       <div class="video-settings-actions">
         <button id="applyVideoSettingsBtn" type="button">Apply Video Settings</button>
@@ -815,6 +858,7 @@
 
     <section id="screen" class="screen">
       <img id="stream" alt="Transcoded stream output">
+      <canvas id="streamCanvas"></canvas>
       <p id="status">Enter a video URL and press Play.</p>
       <div id="screenOverlay"><button id="overlayIcon" class="overlay-pill" type="button" aria-label="Play">▶</button></div>
       <div id="playerControls" class="player-controls">
@@ -831,6 +875,7 @@
     <video id="liveMasterVideo" playsinline preload="auto" style="display:none"></video>
     <section class="status-row">
       <p id="syncInfo" class="status-chip">Sync: idle</p>
+      <div id="videoPathMonitor" class="status-chip">Video: --</div>
       <div id="bandwidthMonitor" class="status-chip">Bandwidth: --</div>
     </section>
     <section class="plex-history">
@@ -867,6 +912,7 @@
     const plexHistoryList = document.getElementById('plexHistoryList');
     const screen = document.getElementById('screen');
     const stream = document.getElementById('stream');
+    const streamCanvas = document.getElementById('streamCanvas');
     const screenOverlay = document.getElementById('screenOverlay');
     const overlayIcon = document.getElementById('overlayIcon');
     const playerControls = document.getElementById('playerControls');
@@ -882,9 +928,13 @@
     const videoSettingsToggleBtn = document.getElementById('videoSettingsToggleBtn');
     const fpsMatchInput = document.getElementById('fpsMatchInput');
     const fpsInput = document.getElementById('fpsInput');
+    const playerModeInputs = Array.from(document.querySelectorAll('input[name="playerMode"]'));
     const qualityInput = document.getElementById('qualityInput');
     const qualityValue = document.getElementById('qualityValue');
+    const h264QualityInput = document.getElementById('h264QualityInput');
+    const h264QualityValue = document.getElementById('h264QualityValue');
     const applyVideoSettingsBtn = document.getElementById('applyVideoSettingsBtn');
+    const videoPathMonitor = document.getElementById('videoPathMonitor');
     const bandwidthMonitor = document.getElementById('bandwidthMonitor');
     let pendingAudioStart = false;
     let liveAudioRequestedAtMs = 0;
@@ -944,6 +994,17 @@
     let liveAudioHoldTimer = null;
     let liveHoldCooldownUntilMs = 0;
     let lastLiveHardSyncAtMs = 0;
+    let currentVideoRenderer = 'mjpeg';
+    let wcDecoder = null;
+    let wcFetchAbort = null;
+    let wcJobToken = 0;
+    let wcCanvasCtx = null;
+    let wcFrameQueue = [];
+    let wcFrameQueueMax = 180;
+    let wcRenderRaf = 0;
+    let wcDecodedCount = 0;
+    let wcRenderedCount = 0;
+    let wcDecodeDone = false;
     const LIVE_STARTUP_BUFFER_WAIT_MS = 3000;
     const LIVE_STARTUP_CLOCK_WAIT_MS = 3000;
     const LIVE_STARTUP_MIN_FRAME_EVENTS = 2;
@@ -1087,21 +1148,44 @@
       return Math.max(min, Math.min(max, Math.round(n)));
     }
 
+    function getSelectedPlayerMode() {
+      const selected = playerModeInputs.find(function (inputEl) {
+        return !!inputEl.checked;
+      });
+      return selected && selected.value === 'webcodecs_h264' ? 'webcodecs_h264' : 'mjpeg';
+    }
+
+    function setSelectedPlayerMode(mode) {
+      const target = mode === 'webcodecs_h264' ? 'webcodecs_h264' : 'mjpeg';
+      for (const inputEl of playerModeInputs) {
+        inputEl.checked = inputEl.value === target;
+      }
+    }
+
     function getVideoSettings() {
+      const mode = getSelectedPlayerMode();
       return {
+        mode,
         fpsMode: fpsMatchInput.checked ? 'match' : 'fixed',
         fps: clampInteger(fpsInput.value, 1, 60, 15),
         q: clampInteger(qualityInput.value, 2, 31, 14),
+        h264Q: clampInteger(h264QualityInput.value, 10, 40, 25),
       };
     }
 
     function syncVideoSettingsInputs() {
       const settings = getVideoSettings();
+      setSelectedPlayerMode(settings.mode);
       fpsMatchInput.checked = settings.fpsMode === 'match';
       fpsInput.value = String(settings.fps);
       fpsInput.disabled = settings.fpsMode === 'match';
       qualityInput.value = String(settings.q);
       qualityValue.textContent = String(settings.q);
+      h264QualityInput.value = String(settings.h264Q);
+      h264QualityValue.textContent = String(settings.h264Q);
+      const mjpegMode = settings.mode === 'mjpeg';
+      qualityInput.disabled = !mjpegMode;
+      h264QualityInput.disabled = mjpegMode;
     }
 
     function saveVideoSettings() {
@@ -1117,9 +1201,13 @@
         if (!raw) return;
         const parsed = JSON.parse(raw);
         if (!parsed || typeof parsed !== 'object') return;
+        setSelectedPlayerMode(String(parsed.mode || '').toLowerCase() === 'webcodecs_h264'
+          ? 'webcodecs_h264'
+          : 'mjpeg');
         fpsMatchInput.checked = String(parsed.fpsMode || '').toLowerCase() === 'match';
         fpsInput.value = String(clampInteger(parsed.fps, 1, 60, 15));
         qualityInput.value = String(clampInteger(parsed.q, 2, 31, 14));
+        h264QualityInput.value = String(clampInteger(parsed.h264Q, 10, 40, 25));
       } catch (_) {}
     }
 
@@ -1130,15 +1218,29 @@
       return (value / 1_000).toFixed(1) + ' kbps';
     }
 
+    function renderVideoPathMonitor(metrics) {
+      if (!metrics || typeof metrics !== 'object') {
+        videoPathMonitor.textContent = 'Video: --';
+        return;
+      }
+      const rawRenderer = String(metrics.video_renderer || '').toLowerCase();
+      const rawEncoder = String(metrics.video_encoder || '').toLowerCase();
+      const renderer = rawRenderer === 'h264' ? 'H264' : 'MJPEG';
+      const encoder = rawEncoder === 'vaapi' ? 'HW (VAAPI)' : 'CPU';
+      videoPathMonitor.textContent = 'Video: ' + renderer + ' / ' + encoder;
+    }
+
     function renderBandwidthMonitor(metrics) {
       if (!metrics || !Number.isFinite(metrics.total_bps)) {
         bandwidthMonitor.textContent = 'Bandwidth: --';
+        renderVideoPathMonitor(metrics);
         return;
       }
       const totalText = formatBitsPerSecond(metrics.total_bps);
       const videoText = formatBitsPerSecond(Number(metrics.video_bps));
       const audioText = formatBitsPerSecond(Number(metrics.audio_bps));
       bandwidthMonitor.textContent = 'Bandwidth: ' + totalText + ' (V ' + videoText + ' / A ' + audioText + ')';
+      renderVideoPathMonitor(metrics);
     }
 
     function clearBandwidthMonitorLoop() {
@@ -1776,7 +1878,7 @@
           logo.decoding = 'async';
           logo.referrerPolicy = 'no-referrer';
           logo.alt = title;
-          logo.src = channel.logo;
+          logo.src = './channels/logo?url=' + encodeURIComponent(channel.logo);
           logo.onerror = function () {
             logo.replaceWith(buildChannelFallback(title));
           };
@@ -2107,18 +2209,430 @@
         || value.includes('codec=copy');
     }
 
+    function concatUint8(a, b) {
+      if (!a || a.length === 0) return b;
+      if (!b || b.length === 0) return a;
+      const out = new Uint8Array(a.length + b.length);
+      out.set(a, 0);
+      out.set(b, a.length);
+      return out;
+    }
+
+    function findStartCodes(buffer) {
+      const out = [];
+      for (let i = 0; i < buffer.length - 3; i += 1) {
+        if (buffer[i] === 0 && buffer[i + 1] === 0) {
+          if (buffer[i + 2] === 1) {
+            out.push({ index: i, len: 3 });
+            i += 2;
+            continue;
+          }
+          if (buffer[i + 2] === 0 && buffer[i + 3] === 1) {
+            out.push({ index: i, len: 4 });
+            i += 3;
+          }
+        }
+      }
+      return out;
+    }
+
+    function createAnnexBParser() {
+      let buffer = new Uint8Array(0);
+      return {
+        push(chunk, flush) {
+          buffer = concatUint8(buffer, chunk || new Uint8Array(0));
+          const starts = findStartCodes(buffer);
+          if (!starts.length) {
+            if (flush) {
+              buffer = new Uint8Array(0);
+            }
+            return [];
+          }
+          const nalus = [];
+          const firstStart = starts[0].index;
+          if (firstStart > 0) {
+            buffer = buffer.slice(firstStart);
+            for (let i = 0; i < starts.length; i += 1) starts[i].index -= firstStart;
+          }
+          for (let i = 0; i < starts.length - 1; i += 1) {
+            const begin = starts[i].index + starts[i].len;
+            const end = starts[i + 1].index;
+            if (end > begin) nalus.push(buffer.slice(begin, end));
+          }
+          if (flush) {
+            const last = starts[starts.length - 1];
+            const begin = last.index + last.len;
+            if (buffer.length > begin) nalus.push(buffer.slice(begin));
+            buffer = new Uint8Array(0);
+          } else {
+            buffer = buffer.slice(starts[starts.length - 1].index);
+          }
+          return nalus;
+        }
+      };
+    }
+
+    function h264RbspFromPayload(payload) {
+      const out = [];
+      for (let i = 0; i < payload.length; i += 1) {
+        if (i >= 2 && payload[i] === 0x03 && payload[i - 1] === 0x00 && payload[i - 2] === 0x00) {
+          continue;
+        }
+        out.push(payload[i]);
+      }
+      return new Uint8Array(out);
+    }
+
+    function readUeGolomb(rbsp, bitState) {
+      let leadingZeroBits = 0;
+      while (true) {
+        if (bitState.index >= rbsp.length * 8) return null;
+        const byte = rbsp[bitState.index >> 3];
+        const bit = (byte >> (7 - (bitState.index & 7))) & 1;
+        bitState.index += 1;
+        if (bit === 0) {
+          leadingZeroBits += 1;
+        } else {
+          break;
+        }
+      }
+      let value = 1;
+      for (let i = 0; i < leadingZeroBits; i += 1) {
+        if (bitState.index >= rbsp.length * 8) return null;
+        const byte = rbsp[bitState.index >> 3];
+        const bit = (byte >> (7 - (bitState.index & 7))) & 1;
+        bitState.index += 1;
+        value = (value << 1) | bit;
+      }
+      return value - 1;
+    }
+
+    function isFirstSliceInPicture(nalu) {
+      const naluType = nalu[0] & 0x1f;
+      if (naluType < 1 || naluType > 5 || nalu.length < 2) return false;
+      const rbsp = h264RbspFromPayload(nalu.subarray(1));
+      const bitState = { index: 0 };
+      const firstMbInSlice = readUeGolomb(rbsp, bitState);
+      return firstMbInSlice === 0;
+    }
+
+    function stopWebCodecsVideo(clearCanvas) {
+      wcJobToken += 1;
+      if (wcFetchAbort) {
+        try { wcFetchAbort.abort(); } catch (_) {}
+      }
+      wcFetchAbort = null;
+      if (wcRenderRaf) {
+        cancelAnimationFrame(wcRenderRaf);
+        wcRenderRaf = 0;
+      }
+      for (const item of wcFrameQueue) {
+        try { item.frame.close(); } catch (_) {}
+      }
+      wcFrameQueue = [];
+      if (wcDecoder) {
+        try { wcDecoder.close(); } catch (_) {}
+      }
+      wcDecoder = null;
+      wcDecodeDone = false;
+      wcDecodedCount = 0;
+      wcRenderedCount = 0;
+      if (clearCanvas !== false) {
+        streamCanvas.style.display = 'none';
+      }
+    }
+
+    function h264CodecFromSps(sps) {
+      if (!sps || sps.length < 4) return 'avc1.42e01e';
+      const b1 = sps[1].toString(16).padStart(2, '0');
+      const b2 = sps[2].toString(16).padStart(2, '0');
+      const b3 = sps[3].toString(16).padStart(2, '0');
+      return 'avc1.' + b1 + b2 + b3;
+    }
+
+    function findSpsNalu(nalus) {
+      for (const nalu of nalus) {
+        if ((nalu[0] & 0x1f) === 7) return nalu;
+      }
+      return null;
+    }
+
+    async function startWebCodecsVideo(startSeconds, settings) {
+      if (!window.VideoDecoder) {
+        throw new Error('WebCodecs VideoDecoder is not supported in this browser');
+      }
+      stopWebCodecsVideo(false);
+      const token = ++wcJobToken;
+      const stamp = Date.now();
+      const start = Math.max(0, Number.isFinite(startSeconds) ? startSeconds : 0);
+      // Server-side /h264 is normalized to 30fps; keep decoder timeline aligned.
+      const fps = 30;
+      const url = './h264?sid=' + encodeURIComponent(activeSessionId)
+        + '&start=' + start.toFixed(3)
+        + '&fps_mode=' + encodeURIComponent(settings.fpsMode)
+        + '&fps=' + fps
+        + '&h264_q=' + settings.h264Q
+        + '&t=' + stamp;
+      wcFetchAbort = new AbortController();
+      stream.src = '';
+      stream.style.display = 'none';
+      streamCanvas.style.display = 'block';
+      if (!wcCanvasCtx) {
+        wcCanvasCtx = streamCanvas.getContext('2d', { alpha: false });
+      }
+      streamCanvas.width = 1280;
+      streamCanvas.height = 720;
+      wcFrameQueue = [];
+      wcDecodedCount = 0;
+      wcRenderedCount = 0;
+      wcDecodeDone = false;
+      let clockBaseTsSec = null;
+      let clockBasePerfSec = 0;
+      let sawVideoFrame = false;
+      let timestampUs = 0;
+      const fixedFrameDurationUs = Math.round(1000000 / Math.max(1, fps));
+      let configured = false;
+      let sawKeyFrame = false;
+      const pendingAccessUnits = [];
+      let currentAccessUnit = [];
+      let sawVclInAccessUnit = false;
+
+      const response = await fetch(url, { cache: 'no-store', signal: wcFetchAbort.signal });
+      if (!response.ok) {
+        throw new Error('H.264 stream HTTP ' + response.status);
+      }
+      if (!response.body || !response.body.getReader) {
+        throw new Error('Readable stream body is not supported');
+      }
+      const reader = response.body.getReader();
+
+      function getMasterTimeSec() {
+        if (currentIsLiveStream) {
+          const media = getLiveTimingMedia();
+          if (media && !media.paused && Number.isFinite(media.currentTime)) {
+            return media.currentTime;
+          }
+        } else if (audio && !audio.paused && Number.isFinite(audio.currentTime)) {
+          return audio.currentTime;
+        }
+        if (clockBaseTsSec === null) return 0;
+        return clockBaseTsSec + ((performance.now() - clockBasePerfSec) / 1000);
+      }
+
+      function onFrameRendered() {
+        const frameNow = performance.now();
+        if (currentIsLiveStream) {
+          liveFrameLoadCount += 1;
+          if (!liveFirstFrameLoadAtMs) liveFirstFrameLoadAtMs = frameNow;
+          liveLastFrameLoadAtMs = frameNow;
+        }
+        hasVideoFrame = true;
+        liveFirstFrameAtMs = frameNow;
+        if (!sawVideoFrame) {
+          sawVideoFrame = true;
+          clearLiveFirstFrameRetry();
+          liveFirstFrameRetries = 0;
+          statusEl.style.display = 'none';
+          streamCanvas.style.display = 'block';
+          if (freezeOnNextFrame) {
+            freezeOnNextFrame = false;
+            freezeCurrentVideoFrame();
+            return;
+          }
+          updateLiveStartAudioButton();
+          if (!isPaused && pendingAudioStart) {
+            if (currentIsLiveStream) {
+              maybeStartPendingLiveAudio().catch(function () {});
+            } else {
+              pendingAudioStart = false;
+              attemptAudioPlay();
+            }
+          }
+        }
+      }
+
+      function renderFrames() {
+        if (token !== wcJobToken || !wcCanvasCtx) return;
+        const masterTime = getMasterTimeSec();
+        while (wcFrameQueue.length > 6 && wcFrameQueue[1].timestampSec <= masterTime - 0.35) {
+          const drop = wcFrameQueue.shift();
+          drop.frame.close();
+        }
+        if (wcFrameQueue.length && wcFrameQueue[0].timestampSec <= masterTime + 0.02) {
+          const item = wcFrameQueue.shift();
+          if (streamCanvas.width !== item.frame.displayWidth || streamCanvas.height !== item.frame.displayHeight) {
+            streamCanvas.width = item.frame.displayWidth;
+            streamCanvas.height = item.frame.displayHeight;
+          }
+          wcCanvasCtx.drawImage(item.frame, 0, 0, streamCanvas.width, streamCanvas.height);
+          item.frame.close();
+          wcRenderedCount += 1;
+          onFrameRendered();
+        }
+        if (wcDecodeDone && wcFrameQueue.length === 0) {
+          syncInfo.textContent = 'Sync: video stream complete';
+          return;
+        }
+        wcRenderRaf = requestAnimationFrame(renderFrames);
+      }
+      wcRenderRaf = requestAnimationFrame(renderFrames);
+
+      wcDecoder = new window.VideoDecoder({
+        output: (frame) => {
+          if (token !== wcJobToken) {
+            frame.close();
+            return;
+          }
+          const tsUs = Number.isFinite(frame.timestamp) ? frame.timestamp : timestampUs;
+          const tsSec = tsUs / 1000000;
+          if (clockBaseTsSec === null) {
+            clockBaseTsSec = tsSec;
+            clockBasePerfSec = performance.now();
+          }
+          wcFrameQueue.push({ frame, timestampSec: tsSec });
+          if (wcFrameQueue.length > wcFrameQueueMax * 2) {
+            const drop = wcFrameQueue.shift();
+            drop.frame.close();
+          }
+        },
+        error: (error) => {
+          if (token !== wcJobToken) return;
+          statusEl.style.display = 'block';
+          statusEl.textContent = 'WebCodecs decode error: ' + (error && error.message ? error.message : String(error));
+        }
+      });
+
+      async function ensureConfiguredFromSps(sps) {
+        if (configured) return;
+        const codec = h264CodecFromSps(sps);
+        const support = await window.VideoDecoder.isConfigSupported({
+          codec,
+          optimizeForLatency: true,
+          hardwareAcceleration: 'prefer-hardware',
+          avc: { format: 'annexb' }
+        });
+        if (!support.supported) {
+          throw new Error('H.264 codec not supported: ' + codec);
+        }
+        wcDecoder.configure(support.config);
+        configured = true;
+      }
+
+      function decodeAccessUnit(nalus) {
+        if (!configured || !wcDecoder || token !== wcJobToken || !nalus.length) return;
+        const isKey = nalus.some((nalu) => (nalu[0] & 0x1f) === 5);
+        if (!sawKeyFrame && !isKey) return;
+        if (isKey) sawKeyFrame = true;
+        let totalLen = 0;
+        for (const nalu of nalus) totalLen += 4 + nalu.length;
+        const data = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const nalu of nalus) {
+          data.set([0, 0, 0, 1], offset);
+          offset += 4;
+          data.set(nalu, offset);
+          offset += nalu.length;
+        }
+        const frameDurationUs = fixedFrameDurationUs;
+
+        wcDecoder.decode(new EncodedVideoChunk({
+          type: isKey ? 'key' : 'delta',
+          timestamp: timestampUs,
+          duration: frameDurationUs,
+          data
+        }));
+        wcDecodedCount += 1;
+        timestampUs += frameDurationUs;
+      }
+
+      async function processAccessUnit(nalus) {
+        if (!nalus.length) return;
+        if (!configured) {
+          const sps = findSpsNalu(nalus);
+          if (sps) {
+            await ensureConfiguredFromSps(sps);
+            for (const queued of pendingAccessUnits) decodeAccessUnit(queued);
+            pendingAccessUnits.length = 0;
+          }
+        }
+        if (!configured) {
+          pendingAccessUnits.push(nalus);
+          return;
+        }
+        while (
+          token === wcJobToken &&
+          wcDecoder &&
+          (wcDecoder.decodeQueueSize > 32 || wcFrameQueue.length > wcFrameQueueMax)
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 4));
+        }
+        decodeAccessUnit(nalus);
+      }
+
+      async function consumeNalu(nalu) {
+        const naluType = nalu[0] & 0x1f;
+        if (naluType === 9) {
+          await processAccessUnit(currentAccessUnit);
+          currentAccessUnit = [];
+          sawVclInAccessUnit = false;
+          return;
+        }
+        const isVcl = naluType >= 1 && naluType <= 5;
+        if (isVcl && sawVclInAccessUnit && isFirstSliceInPicture(nalu)) {
+          await processAccessUnit(currentAccessUnit);
+          currentAccessUnit = [];
+          sawVclInAccessUnit = false;
+        }
+        currentAccessUnit.push(nalu);
+        if (isVcl) sawVclInAccessUnit = true;
+      }
+
+      const parser = createAnnexBParser();
+      while (token === wcJobToken) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const nalus = parser.push(value, false);
+        for (const nalu of nalus) {
+          await consumeNalu(nalu);
+        }
+      }
+      const tail = parser.push(new Uint8Array(0), true);
+      for (const nalu of tail) {
+        await consumeNalu(nalu);
+      }
+      await processAccessUnit(currentAccessUnit);
+      if (!configured) {
+        throw new Error('No SPS found in H.264 stream');
+      }
+      await wcDecoder.flush();
+      wcDecodeDone = true;
+    }
+
     function setStreamFromTime(seconds) {
       const stamp = Date.now();
       const start = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
       const settings = getVideoSettings();
+      currentVideoRenderer = settings.mode;
       liveDebugLog('setStreamFromTime', {
         sid: activeSessionId,
         start,
         live: currentIsLiveStream,
+        mode: currentVideoRenderer,
         fps_mode: settings.fpsMode,
         fps: settings.fps,
         q: settings.q,
       });
+      if (currentVideoRenderer === 'webcodecs_h264') {
+        startWebCodecsVideo(start, settings).catch(function (error) {
+          if (String(error && error.name) === 'AbortError') return;
+          statusEl.style.display = 'block';
+          statusEl.textContent = 'Could not start H.264 stream: ' + (error && error.message ? error.message : String(error));
+          syncInfo.textContent = 'Sync: stream error';
+        });
+        return;
+      }
+      stopWebCodecsVideo();
+      streamCanvas.style.display = 'none';
       stream.src = './mjpeg?sid=' + encodeURIComponent(activeSessionId)
         + '&start=' + start.toFixed(3)
         + '&fps_mode=' + encodeURIComponent(settings.fpsMode)
@@ -2151,6 +2665,7 @@
       syncVideoSettingsInputs();
       saveVideoSettings();
       if (!activeSessionId) return;
+      currentVideoRenderer = getVideoSettings().mode;
       suppressStreamError = true;
       hasVideoFrame = false;
       lastVideoClock = 0;
@@ -2165,6 +2680,10 @@
 
     function captureFrameDataUrl() {
       try {
+        if (currentVideoRenderer === 'webcodecs_h264') {
+          if (!streamCanvas.width || !streamCanvas.height) return '';
+          return streamCanvas.toDataURL('image/jpeg', 0.85);
+        }
         if (!stream.naturalWidth || !stream.naturalHeight) return '';
         const canvas = document.createElement('canvas');
         canvas.width = stream.naturalWidth;
@@ -2181,7 +2700,12 @@
     function freezeCurrentVideoFrame() {
       pausedFrameDataUrl = captureFrameDataUrl();
       suppressStreamError = true;
-      if (pausedFrameDataUrl) {
+      if (currentVideoRenderer === 'webcodecs_h264') {
+        stopWebCodecsVideo(false);
+        stream.src = '';
+        stream.style.display = 'none';
+        streamCanvas.style.display = 'block';
+      } else if (pausedFrameDataUrl) {
         stream.src = pausedFrameDataUrl;
         stream.style.display = 'block';
       } else {
@@ -2617,9 +3141,15 @@
         media.playbackRate = 1.0;
       }
       suppressStreamError = true;
-      if (pausedFrameDataUrl) {
+      if (currentVideoRenderer === 'webcodecs_h264') {
+        stopWebCodecsVideo(false);
+        stream.src = '';
+        stream.style.display = 'none';
+        streamCanvas.style.display = 'block';
+      } else if (pausedFrameDataUrl) {
         stream.src = pausedFrameDataUrl;
         stream.style.display = 'block';
+        streamCanvas.style.display = 'none';
       } else {
         stream.src = '';
       }
@@ -2700,6 +3230,8 @@
       event.preventDefault();
       const url = input.value.trim();
       if (!url) return;
+      const selectedSettings = getVideoSettings();
+      currentVideoRenderer = selectedSettings.mode;
       currentMediaUrl = url;
       if (currentPlexMeta && currentPlexMeta.url !== url) {
         currentPlexMeta = null;
@@ -2720,6 +3252,8 @@
       statusEl.textContent = 'Connecting...';
       statusEl.style.display = 'block';
       stream.style.display = 'none';
+      streamCanvas.style.display = 'none';
+      stopWebCodecsVideo();
       syncInfo.textContent = 'Sync: preparing session...';
       clearSyncTimer();
       audio.pause();
@@ -2866,6 +3400,7 @@
     });
 
     stream.addEventListener('load', function () {
+      if (currentVideoRenderer !== 'mjpeg') return;
       const frameNow = performance.now();
       liveDebugLog('stream load frame', {
         live: currentIsLiveStream,
@@ -2907,6 +3442,7 @@
     });
 
     stream.addEventListener('error', function () {
+      if (currentVideoRenderer !== 'mjpeg') return;
       liveDebugLog('stream error', {
         suppressStreamError,
         currentIsLiveStream,
@@ -3216,8 +3752,9 @@
       lastVideoClock = 0;
       hasVideoFrame = false;
       mediaBaseTime = target;
-      // Force-close current MJPEG stream before reopening at the seek target.
+      // Force-close current video stream before reopening at the seek target.
       stream.src = '';
+      stopWebCodecsVideo();
       setAudioFromTime(target);
       if (wasPaused) {
         if (!currentIsLiveStream) {
@@ -3283,12 +3820,24 @@
       saveVideoSettings();
     });
 
+    for (const modeInput of playerModeInputs) {
+      modeInput.addEventListener('change', function () {
+        syncVideoSettingsInputs();
+        saveVideoSettings();
+      });
+    }
+
     fpsInput.addEventListener('change', function () {
       syncVideoSettingsInputs();
       saveVideoSettings();
     });
 
     qualityInput.addEventListener('input', function () {
+      syncVideoSettingsInputs();
+      saveVideoSettings();
+    });
+
+    h264QualityInput.addEventListener('input', function () {
       syncVideoSettingsInputs();
       saveVideoSettings();
     });
@@ -3363,10 +3912,8 @@
     updatePlayPauseUi();
     updateLiveStartAudioButton();
     showPlayerControls();
-    const hadAddressBarUrl = applyAddressBarUrl();
-    if (!hadAddressBarUrl) {
-      restoreLastPlaybackFromStorage();
-    }
+    // Keep optional URL prefill from address bar, but never auto-start playback.
+    applyAddressBarUrl();
   </script>
 </body>
 </html>
