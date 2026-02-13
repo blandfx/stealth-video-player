@@ -29,7 +29,6 @@ LIVE_PROBESIZE = "5M"
 LIVE_ANALYZEDURATION = "5M"
 LIVE_AUDIO_PROBESIZE = "1M"
 LIVE_AUDIO_ANALYZEDURATION = "1M"
-LIVE_VIDEO_FPS = 15
 H264_VIDEO_CRF = "25"
 H264_VIDEO_PRESET = "veryfast"
 H264_GOP = "30"
@@ -1793,12 +1792,8 @@ class Handler(BaseHTTPRequestHandler):
         session_mode = get_session_mode(sid)
         start_seconds = parse_start_seconds(params)
         live_input = is_likely_live_stream(video_url or "")
-        fps_mode = ((params.get("fps_mode") or ["fixed"])[0]).strip().lower()
-        requested_fps = parse_int_param(params, "fps", 1, 60)
-        if fps_mode == "match":
-            fps_value = None
-        else:
-            fps_value = requested_fps if requested_fps is not None else (LIVE_VIDEO_FPS if live_input else None)
+        # Normalize MJPEG output to a fixed 30fps for predictable playback behavior.
+        fps_value = H264_TARGET_FPS
         requested_q = parse_int_param(params, "q", 2, 31)
         q_value = str(requested_q if requested_q is not None else int(VIDEO_Q_CPU))
 
@@ -1814,8 +1809,7 @@ class Handler(BaseHTTPRequestHandler):
             # Pace buffered-live playback at wall clock to avoid bursty MJPEG output.
             input_args = ["-re", *input_args]
         video_filter = f"scale='min({VIDEO_WIDTH},iw)':-1:flags=lanczos"
-        if fps_value is not None:
-            video_filter = f"fps={fps_value}," + video_filter
+        video_filter = f"fps={fps_value}," + video_filter
 
         cpu_cmd = [
             "ffmpeg",
@@ -1860,7 +1854,7 @@ class Handler(BaseHTTPRequestHandler):
                 "0:v:0",
                 "-an",
                 "-vf",
-                ("fps=" + str(fps_value) + "," if fps_value is not None else "") + f"hwdownload,format=nv12,scale='min({VIDEO_WIDTH},iw)':-1:flags=lanczos",
+                f"fps={fps_value},hwdownload,format=nv12,scale='min({VIDEO_WIDTH},iw)':-1:flags=lanczos",
                 "-q:v",
                 q_value,
                 "-f",
